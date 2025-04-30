@@ -1,0 +1,103 @@
+# ─── Python ─────────────────────────────────────
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]                     # compiled Python files :contentReference[oaicite:0]{index=0}
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+build/                         # setuptools build output :contentReference[oaicite:1]{index=1}
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/                         # if you use a local venv :contentReference[oaicite:2]{index=2}
+env/
+venv/
+
+# Pipenv
+Pipfile.lock
+
+# Poetry
+poetry.lock
+
+# mypy cache
+.mypy_cache/
+
+# Pytest cache
+.pytest_cache/
+
+# Coverage reports
+htmlcov/
+.coverage
+
+# ─── Environment ─────────────────────────────────
+# dotenv environment variables :contentReference[oaicite:3]{index=3}
+.env
+.env.*                         # any other env variants
+
+# ─── Docker ──────────────────────────────────────
+# Docker build context files to ignore :contentReference[oaicite:4]{index=4}
+docker-compose.override.yml
+Dockerfile.dev
+**/docker-compose*.yml
+**/Dockerfile.*
+
+# Node modules (if frontend code ever added)
+node_modules/
+
+# ─── IDEs & Editors ─────────────────────────────
+# VSCode :contentReference[oaicite:5]{index=5}
+.vscode/
+
+# JetBrains
+.idea/
+
+# macOS
+.DS_Store
+
+# Vim swap files
+*.swp
+*~
+
+# Emacs
+*~
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# ─── Data Stores & Cache ────────────────────────
+# Milvus local data (if ever in repo) :contentReference[oaicite:6]{index=6}
+milvus_data/
+# Redis persistence files (if local) 
+dump.rdb
+appendonly.aof
+
+# Neo4j local DB (if not Docker volume)
+neo4j_data/
+
+# MongoDB data directory (if local)
+mongodb_data/
+
+# ─── Logs & Reports ────────────────────────────
+*.log
+logs/
+report.html
+
+# ─── Miscellaneous ─────────────────────────────
+*.orig                         # diff/patch backup files
+*.bak
+*.tmp
+
+# Jetpack/iOS
+**/Pods/
+
+# Sensitive keys (if accidentally added)
+*.pem
+*.key
+
+volumes/
