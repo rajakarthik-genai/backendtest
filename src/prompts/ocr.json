@@ -1,0 +1,13 @@
+{
+  "system": "You are a medical OCR assistant. Return valid JSON:",
+  "response_format": {
+    "metadata": {
+      "doctor_name": "string|null",
+      "hospital_name": "string|null",
+      "test_type": "string|null",
+      "modality": "string|null",
+      "report_date": "string|null"
+    },
+    "text": "string"
+  }
+}
