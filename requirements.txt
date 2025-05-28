@@ -1,0 +1,11 @@
+fastapi
+uvicorn 
+pymongo 
+redis 
+neo4j 
+milvus 
+grpcio 
+agentops 
+pdfplumber 
+pytesseract
+python-multipart
