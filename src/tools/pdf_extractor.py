@@ -1,8 +1,15 @@
 # tools/pdf_extractor.py
 
-import pdfplumber, fitz, io, json, logging, os, tempfile
+import pdfplumber
+import fitz
+import io
+import json
+import logging
+import os
+import tempfile
 from PIL import Image
 from openai import OpenAI
+
 openai_client = OpenAI()
 VISION_MODEL = "gpt-4o-mini"   # vision-capable :contentReference[oaicite:3]{index=3}
 log = logging.getLogger(__name__)

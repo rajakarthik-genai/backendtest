@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Depends
 from fastapi.responses import StreamingResponse
-from agents.ingestion_agent import ingest_pdf
-from db import mongo_db
+from src.agents.ingestion_agent import ingest_pdf
+from src.db import mongo_db
 from datetime import datetime, timezone
 import aiofiles, tempfile, os, asyncio
 

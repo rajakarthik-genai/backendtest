@@ -2,10 +2,12 @@
 Combine specialist outputs into one coherent final reply.
 """
 from __future__ import annotations
-import json, openai
-from prompts import aggregator_prompt
-from utils.logging import logger
-from memory.memory_manager import add_message_to_history, get_last_user_question
+import json, openai, importlib.resources
+from src.utils.logging import logger
+from src.memory.memory_manager import add_message_to_history, get_last_user_question
+
+with importlib.resources.files('src.prompts').joinpath('aggregator_prompt.json').open('r', encoding='utf-8') as f:
+    aggregator_prompt = json.load(f)
 
 
 def combine_answers(user_id: str, answers: list[str]):
@@ -41,3 +43,6 @@ def combine_answers(user_id: str, answers: list[str]):
     finally:
         if full:
             add_message_to_history(user_id, "assistant", full)
+
+
+aggregator_agent = combine_answers

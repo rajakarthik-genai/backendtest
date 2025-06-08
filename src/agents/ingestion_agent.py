@@ -1,7 +1,7 @@
 # agents/ingestion_agent.py
 
-from tools import pdf_extractor
-from db import mongo_db, neo4j_db, milvus_db
+from src.tools import pdf_extractor
+from src.db import mongo_db, neo4j_db, milvus_db
 import openai, json, os, asyncio, logging
 GPT_MODEL = os.getenv("GPT_MODEL","gpt-4o-mini")
 log = logging.getLogger(__name__)

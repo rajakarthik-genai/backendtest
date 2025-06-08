@@ -4,21 +4,23 @@ OpenAI function-calling and finally streams aggregated answer
 back to API layer.
 """
 from __future__ import annotations
-import json, openai
-from utils.logging import logger
-from prompts import orchestrator_prompt
-from memory.memory_manager import (
+import json, openai, importlib.resources
+from src.utils.logging import logger
+from src.memory.memory_manager import (
     get_conversation_history,
     get_long_term_memory,
     add_message_to_history,
 )
-from agents import (
+from src.agents import (
     cardiologist_agent,
     general_physician_agent,
     orthopedist_agent,
     neurologist_agent,
     aggregator_agent,
 )
+
+with importlib.resources.files('src.prompts').joinpath('orchestrator_prompt.json').open('r', encoding='utf-8') as f:
+    orchestrator_prompt = json.load(f)
 
 # -------- function registry -------- #
 def _call_specialist(func_name: str, user_id: str, query: str) -> str:

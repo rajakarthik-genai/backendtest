@@ -1,4 +1,3 @@
-# chat/short_term.py
 import json
 import redis
 

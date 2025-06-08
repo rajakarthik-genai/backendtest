@@ -1,4 +1,3 @@
-# chat/long_term.py
 import json
 import redis
 

@@ -1,8 +1,10 @@
-from __future__ import annotations
-import json, openai
+import json
 from typing import Callable
-from utils.logging import logger
-from tools import web_search, vector_store, knowledge_graph, document_db
+import openai
+
+from src.tools import document_db, vector_store, web_search, knowledge_graph
+from src.utils.logging import logger
+
 
 def build_specialist(prompt_dict: dict) -> Callable[[str, str], str]:
     """
@@ -13,22 +15,22 @@ def build_specialist(prompt_dict: dict) -> Callable[[str, str], str]:
         {
             "name": "search_web",
             "description": "Search the web for up-to-date info.",
-            "parameters": {"type": "object","properties":{"query":{"type":"string"}},"required":["query"]},
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}},"required": ["query"]},
         },
         {
             "name": "query_vector_db",
             "description": "Semantic search in medical knowledge base.",
-            "parameters": {"type": "object","properties":{"query":{"type":"string"}},"required":["query"]},
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}},"required": ["query"]},
         },
         {
             "name": "query_graph",
             "description": "Query medical knowledge graph.",
-            "parameters": {"type": "object","properties":{"query":{"type":"string"}},"required":["query"]},
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}},"required": ["query"]},
         },
         {
             "name": "query_document_db",
             "description": "Fetch patient record by type.",
-            "parameters": {"type": "object","properties":{"record_type":{"type":"string"}},"required":["record_type"]},
+            "parameters": {"type": "object", "properties": {"record_type": {"type": "string"}},"required": ["record_type"]},
         },
     ]
 

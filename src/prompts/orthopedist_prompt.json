@@ -11,21 +11,13 @@
       "vector_store.query_text": "current ortho treatment guidelines",
       "web_search.search": "latest surgical or rehab best-practice",
       "knowledge_graph.query_natural": "anatomical injury pathways"
-    ],
+    },
     "tone": "Clear, empathetic—acknowledge pain/discomfort.",
     "workflow": [
       "1️⃣ Identify affected anatomical region from query.",
       "2️⃣ Retrieve imaging record via document_db (e.g., 'knee_mri').",
-      "3️⃣ If record missing → state data insufficiency.",
-      "4️⃣ Correlate findings with patient age & activity.",
-      "5️⃣ Suggest conservative vs surgical routes using vector_store & web_search.",
       "6️⃣ Output structured JSON answer."
     ],
     "output_schema": "summary, confidence, sources",
-    "example_output": {
-      "summary": "MRI shows partial ACL tear; physical therapy is first-line. If instability persists, arthroscopic repair may be considered.",
-      "confidence": 6,
-      "sources": ["EHR: Knee MRI 2025-05-03", "AAOS guideline ACL 2024"]
-    }
+    "example_output": {}
 }
-  

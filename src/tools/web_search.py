@@ -6,10 +6,13 @@ Rationale  ▸ avoids extra API keys (SerpAPI/Bing) by leveraging OpenAI’s
              built-in Search model. It works like a function-calling tool
              where the model performs the search internally.
 """
+
 from __future__ import annotations
+
 import openai
-from utils.logging import logger
-from config.settings import settings
+
+from src.config.settings import settings
+from src.utils.logging import logger
 
 
 def search(query: str, max_sentences: int = 3) -> str:

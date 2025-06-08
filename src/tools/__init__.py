@@ -10,10 +10,10 @@ safely from `main.startup`, unit tests, or ad-hoc scripts.
 Usage (agents):
     from tools import web_search, vector_store, knowledge_graph, document_db
 """
-from .web_search      import search
-from .vector_store    import init_milvus, query_text, add_document
-from .knowledge_graph import init_graph, run_cypher, query_natural
-from tools.document_db     import init_mongo, get_patient_profile, get_patient_record
+from src.tools.web_search      import search
+from src.tools.vector_store    import init_milvus, query_text, add_document
+from src.tools.knowledge_graph import init_graph, run_cypher, query_natural
+from src.tools.document_db     import init_mongo, get_patient_profile, get_patient_record
 __all__ = [
     # web search
     "search",

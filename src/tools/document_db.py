@@ -4,7 +4,7 @@ MongoDB helper for patient profiles & records.
 from __future__ import annotations
 from typing import Any
 from pymongo import MongoClient
-from utils.logging import logger
+from src.utils.logging import logger
 
 _client: MongoClient | None = None
 _db = None

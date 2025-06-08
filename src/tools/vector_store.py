@@ -12,10 +12,9 @@ from __future__ import annotations
 import os
 from typing import List
 from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility
-import openai
 
-from config.settings import settings
-from utils.logging import logger
+from src.config.settings import settings
+from src.utils.logging import logger
 
 # Singleton-like globals
 _COLLECTION: Collection | None = None

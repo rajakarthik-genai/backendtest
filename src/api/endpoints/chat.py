@@ -6,18 +6,19 @@ from datetime import datetime
 import json
 import openai
 from pymongo import MongoClient
-from chat.long_term import get_long_term_memory, update_long_term_memory
-from chat.short_term import add_message_to_stm, get_short_term_memory
+from src.chat.long_term import get_long_term_memory, update_long_term_memory
+from src.chat.short_term import add_message_to_stm, get_short_term_memory
+from src.config.settings import settings
 
 router = APIRouter(prefix="/chat")
 
 # Initialize MongoDB (synchronous for simplicity)
-mongo_client = MongoClient("mongodb://localhost:27017")
+mongo_client = MongoClient(settings.MONGO_URI)
 db = mongo_client["chat_db"]
 messages_col = db["messages"]
 
-# Example OpenAI API key setup (assumes env var or config)
-openai.api_key = "YOUR_OPENAI_KEY"  
+# Set OpenAI API key from settings
+openai.api_key = settings.OPENAI_API_KEY  
 
 class ChatRequest(BaseModel):
     user_id: str

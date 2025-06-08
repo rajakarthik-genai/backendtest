@@ -3,7 +3,7 @@ Neo4j helper for Cypher execution and simple natural-language mapping.
 """
 from __future__ import annotations
 from neo4j import GraphDatabase, Driver
-from utils.logging import logger
+from src.utils.logging import logger
 
 _driver: Driver | None = None
 
