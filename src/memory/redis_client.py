@@ -7,6 +7,8 @@ the rest of the backend continues to run (dev-friendly).
 """
 import os, json, logging
 import redis
+from src.config.settings import settings
+
 logger = logging.getLogger("memory.redis")
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -28,7 +30,10 @@ def _loads(s):  # returns raw string if not json
     except json.JSONDecodeError: return s
 
 try:
-    _client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+    _client = redis.Redis(
+        host=settings.REDIS_HOST,  # should resolve to "redis" from .env
+        port=settings.REDIS_PORT,
+    )
     _client.ping()
     logger.info("Connected to Redis @ %s", REDIS_URL)
 except Exception as exc:                   # pragma: no cover

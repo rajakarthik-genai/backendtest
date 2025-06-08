@@ -2,13 +2,18 @@
 import redis
 import json
 import datetime
+from src.config.settings import settings
 
 class RedisDB:
     """
     Redis client for caching and managing chat memory.
     """
     def __init__(self, host="localhost", port=6379, db=0):
-        self.client = redis.Redis(host=host, port=port, db=db, decode_responses=True)
+        self.client = redis.Redis(
+            host=settings.REDIS_HOST,  # should resolve to "redis" from .env
+            port=settings.REDIS_PORT,
+            db=db, decode_responses=True
+        )
 
     def set(self, key, value, ex=None):
         """

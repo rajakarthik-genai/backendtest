@@ -1,4 +1,5 @@
 # File: db/mongo_db.py
+from src.config.settings import settings
 from pymongo import MongoClient
 from bson import ObjectId
 import datetime
@@ -7,7 +8,14 @@ class MongoDB:
     """
     MongoDB client with schema validation and indexing for the digital twin backend.
     """
-    def __init__(self, uri="mongodb://localhost:27017/", db_name="digital_twin"):
+    def __init__(self, uri=None, db_name=None):
+        uri = uri or settings.MONGO_URI
+        if not db_name:
+            # Try to extract db from URI, else fallback
+            if "/" in uri.rsplit("@", 1)[-1]:
+                db_name = uri.rsplit("/", 1)[-1]
+            else:
+                db_name = "digital_twin"
         self.client = MongoClient(uri)
         self.db = self.client[db_name]
         self._setup_collections()
