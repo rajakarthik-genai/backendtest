@@ -1,161 +1,80 @@
-# api/endpoints/chat.py
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from datetime import datetime
-import json
-import openai
-from pymongo import MongoClient
-from src.chat.long_term import get_long_term_memory, update_long_term_memory
-from src.chat.short_term import add_message_to_stm, get_short_term_memory
-from src.config.settings import settings
+"""
+Chat streaming + CRUD endpoints.
 
-router = APIRouter(prefix="/chat")
+•  POST /chat/stream            –  bidirectional SSE (OpenAI-style chunks)
+•  GET  /chat/conversations     –  list conv-ids for user+doctor
+•  GET  /chat/history/{conv_id} –  paginated messages
+•  DELETE /chat/{conv_id}       –  delete conversation
+"""
+from uuid import uuid4
+from typing import List
 
-# Initialize MongoDB (synchronous for simplicity)
-mongo_client = MongoClient(settings.MONGO_URI)
-db = mongo_client["chat_db"]
-messages_col = db["messages"]
+from fastapi import APIRouter, Request, Query, HTTPException, status
+from fastapi.responses import EventSourceResponse, JSONResponse
 
-# Set OpenAI API key from settings
-openai.api_key = settings.OPENAI_API_KEY  
+from src.chat.short_term import add_message_to_stm
+from src.db import mongo_db
+from src.agents.orchestrator_agent import orchestrate  # CrewAI
+from src.utils.logging import log
 
-class ChatRequest(BaseModel):
-    user_id: str
-    doctor_id: str
-    conversation_id: str
-    message: str
+router = APIRouter(prefix="/chat", tags=["chat"])
 
+
+# ─────────────────────────── Streaming chat ────────────────────────────────
 @router.post("/stream")
-async def chat_stream(req: ChatRequest):
-    user_id = req.user_id
-    doctor_id = req.doctor_id
-    conv_id = req.conversation_id
-    user_msg = req.message
+async def chat_stream(
+    request: Request,
+    user_id: str = Query(...),
+    doctor_id: str = Query(...),
+    conv_id: str | None = Query(default=None),
+):
+    data = await request.json()
+    question: str = data.get("message")
+    if not question:
+        raise HTTPException(400, "message is required")
 
-    # 1) Store the user message in short-term memory and Mongo
-    add_message_to_stm(user_id, doctor_id, conv_id, "user", user_msg)
-    messages_col.insert_one({
-        "user_id": user_id,
-        "doctor_id": doctor_id,
-        "conversation_id": conv_id,
-        "role": "user",
-        "content": user_msg,
-        "timestamp": datetime.utcnow()
-    })
+    conv_id = conv_id or str(uuid4())
+    add_message_to_stm(user_id, doctor_id, conv_id, "user", question)
 
-    # 2) Retrieve long-term memory and prepare the prompt
-    ltm = get_long_term_memory(user_id)
-    history = get_short_term_memory(user_id, doctor_id, conv_id)
-    messages = []
-    if ltm:
-        # Provide memory as system context (could be more elaborate)
-        messages.append({
-            "role": "system",
-            "content": f"Patient medical history: {json.dumps(ltm)}"
-        })
-    # Include recent history (which now contains the just-added user message and prior turns)
-    messages.extend(history)
+    async def event_stream():
+        async for delta in orchestrate(
+            user_id=user_id,
+            doctor_id=doctor_id,
+            conv_id=conv_id,
+            question=question,
+        ):
+            yield {"data": {"choices": [{"delta": {"content": delta}}]}}
+        yield {"data": "[DONE]"}
 
-    # 3) Define a generator to stream the OpenAI response
-    def event_stream():
-        # Call the OpenAI ChatCompletion with streaming
-        response = openai.ChatCompletion.create(
-            model="gpt-4-0613",
-            messages=messages,
-            stream=True,
-            functions=[
-                {
-                    "name": "update_memory",
-                    "description": "Update patient history in JSON format",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "conditions": {"type": "array", "items": {"type": "string"}},
-                            "lab_anomalies": {"type": "array", "items": {"type": "string"}},
-                            "injuries": {"type": "array", "items": {"type": "string"}},
-                            "allergies": {"type": "array", "items": {"type": "string"}},
-                        },
-                    },
-                }
-            ],
-        )
-        assistant_text = ""
-        # Stream the response chunks
-        for chunk in response:
-            # Extract any new text from the assistant
-            delta = chunk["choices"][0]["delta"].get("content")
-            if delta:
-                assistant_text += delta
-                # Yield as SSE data message
-                yield f"data: {delta}\n\n"
-        # After streaming is complete:
-        # Save the assistant message to short-term memory and Mongo
-        if assistant_text:
-            add_message_to_stm(user_id, doctor_id, conv_id, "assistant", assistant_text)
-            messages_col.insert_one({
-                "user_id": user_id,
-                "doctor_id": doctor_id,
-                "conversation_id": conv_id,
-                "role": "assistant",
-                "content": assistant_text,
-                "timestamp": datetime.utcnow()
-            })
-        # 4) Update long-term memory using a function call
-        try:
-            # Call the model again to extract memory updates (non-streaming for simplicity)
-            mem_response = openai.ChatCompletion.create(
-                model="gpt-4-0613",
-                messages=[
-                    {"role": "system", "content": "Based on the conversation, update the patient's medical history. Output JSON with keys: conditions, lab_anomalies, injuries, allergies."},
-                    {"role": "assistant", "content": assistant_text}
-                ],
-                functions=[response.request.kwargs["functions"][0]],
-                function_call={"name": "update_memory"}
-            )
-            # Parse function arguments as JSON
-            mem_args = mem_response["choices"][0]["message"]["function_call"]["arguments"]
-            new_memory = json.loads(mem_args)
-            update_long_term_memory(user_id, new_memory)
-        except Exception as e:
-            # If memory update fails, skip
-            pass
+    return EventSourceResponse(event_stream(), media_type="text/event-stream")
 
-    # Return streaming response (SSE)
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
+# ─────────────────────────── CRUD helpers ──────────────────────────────────
 @router.get("/conversations")
-async def list_conversations(user_id: str = Query(...), doctor_id: str = Query(...)):
-    """
-    List all conversation IDs for the given user and doctor.
-    """
-    conv_ids = messages_col.distinct(
-        "conversation_id",
-        {"user_id": user_id, "doctor_id": doctor_id}
-    )
-    return {"conversations": conv_ids}
+async def list_conversations(
+    user_id: str = Query(...), doctor_id: str = Query(...)
+) -> List[str]:
+    """Return list of conversation ids (latest first)."""
+    pipeline = [
+        {"$match": {"user_id": user_id, "doctor_id": doctor_id}},
+        {"$group": {"_id": "$conv_id", "ts": {"$max": "$ts"}}},
+        {"$sort": {"ts": -1}},
+        {"$project": {"_id": 0, "conv_id": "$_id"}},
+    ]
+    convs = [d["conv_id"] for d in mongo_db.chat_col.aggregate(pipeline)]
+    return convs
 
-@router.get("/history/{conversation_id}")
-async def get_history(conversation_id: str, skip: int = 0, limit: int = 50):
-    """
-    Get paginated message history for a conversation ID.
-    """
-    cursor = messages_col.find(
-        {"conversation_id": conversation_id}
-    ).sort("timestamp", 1).skip(skip).limit(limit)
-    history = []
-    for msg in cursor:
-        history.append({
-            "role": msg["role"],
-            "content": msg["content"],
-            "timestamp": msg["timestamp"]
-        })
-    return {"messages": history}
 
-@router.delete("/conversations/{conversation_id}")
-async def delete_conversation(conversation_id: str):
-    """
-    Delete all messages for a given conversation.
-    """
-    result = messages_col.delete_many({"conversation_id": conversation_id})
-    return {"deleted_count": result.deleted_count}
+@router.get("/history/{conv_id}")
+async def get_history(
+    conv_id: str, skip: int = 0, limit: int = 50
+) -> list[dict]:
+    """Paginated chat history."""
+    return [doc async for doc in mongo_db.get_chat_history(conv_id, skip, limit)]
+
+
+@router.delete("/{conv_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_conversation(conv_id: str):
+    """Hard-delete one conversation (all messages)."""
+    mongo_db.chat_col.delete_many({"conv_id": conv_id})
+    return JSONResponse(status_code=204)

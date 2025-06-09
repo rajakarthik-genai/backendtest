@@ -1,24 +1,36 @@
-from fastapi import APIRouter, UploadFile, File, Depends
-from fastapi.responses import StreamingResponse
-from src.agents.ingestion_agent import ingest_pdf
-from src.db import mongo_db
 from datetime import datetime, timezone
-import aiofiles, tempfile, os, asyncio
+from fastapi import APIRouter, BackgroundTasks, File, UploadFile, Query, HTTPException
+
+from src.db import mongo_db
+from src.agents.ingestion_agent import run_ingestion_agent
+from src.utils.logging import log
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
-@router.post("/", response_class=StreamingResponse)
-async def upload(user_id:str, file:UploadFile=File(...)):
-    tmp = tempfile.NamedTemporaryFile(delete=False,suffix=".pdf")
-    async with aiofiles.open(tmp.name,'wb') as f:
-        while chunk:=await file.read(1024*1024):
-            await f.write(chunk)
-    async def events():
-        yield "data: file saved\n\n"
-        await mongo_db.save_ingest_log({"user_id":user_id,"file":file.filename,"status":"saved","ts":datetime.now(timezone.utc)})
-        try:
-            await ingest_pdf(user_id,tmp.name)
-            yield "data: ingestion complete\n\n"
-        except Exception as e:
-            yield f"data: error {e}\n\n"
-    return StreamingResponse(events(),media_type="text/event-stream")
+
+@router.post("/")
+async def upload_file(
+    background_tasks: BackgroundTasks,
+    user_id: str = Query(...),
+    file: UploadFile = File(...),
+):
+    if not file.filename.lower().endswith((".pdf", ".png", ".jpg", ".jpeg")):
+        raise HTTPException(400, detail="Only PDF/Image accepted")
+
+    save_path = f"/tmp/{datetime.utcnow().timestamp()}_{file.filename}"
+    with open(save_path, "wb") as out:
+        out.write(await file.read())
+
+    log_id = await mongo_db.save_ingest_log(
+        {
+            "user_id": user_id,
+            "file": file.filename,
+            "path": save_path,
+            "status": "pending",
+            "ts": datetime.now(timezone.utc),
+        }
+    )
+    background_tasks.add_task(
+        run_ingestion_agent, user_id=user_id, filepath=save_path, ingest_log_id=log_id
+    )
+    return {"ingest_id": log_id, "status": "queued"}
