@@ -1,6 +1,6 @@
 """
-Aggregator: merges specialist answers into one comprehensive reply
-while streaming chunks for SSE.
+Aggregator: merges specialist answers into a single patient-friendly reply,
+and streams aggregated output.
 """
 
 from typing import List, Generator
@@ -53,5 +53,5 @@ def aggregate_stream(
     yield "data: [DONE]\n\n"
 
 
-# expose default handler (non-stream)
-aggregation_agent = aggregate
+# Export a singleton if needed
+aggregation_agent = aggregate_stream

@@ -9,12 +9,12 @@ from bson import ObjectId
 from src.utils.logging import logger
 from src.config.settings import settings
 from src.tools import pdf_extractor, document_db, vector_store
-from src.db.mongo_db import MongoDB
-from src.db.neo4j_db import Neo4jDB
+from src.db.mongo_db import MongoDBClient as MongoDB
+from src.db.neo4j_db import Neo4jGraphBuilder as Neo4jGraph
 
 openai.api_key = settings.openai_api_key
 mongo = MongoDB()
-
+neo4j = Neo4jGraph()
 
 async def ingest_pdf(user_id: str, file_path: str, ingest_log_id: str):
     logger.info("Ingestion started for %s", file_path)

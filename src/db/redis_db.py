@@ -1,8 +1,50 @@
 # File: db/redis_db.py
-import redis
+import os
 import json
-import datetime
+import logging
+import redis
 from src.config.settings import settings
+
+logger = logging.getLogger("memory.redis")
+
+class _Stub:
+    def set(self, *_, **__): pass
+    def get(self, *_): return None
+    def delete(self, *_): pass
+    def rpush(self, *_, **__): pass
+    def ltrim(self, *_, **__): pass
+    def lrange(self, *_, **__): return []
+    def expire(self, *_, **__): pass
+    def ping(self): return False
+
+def _dumps(o):
+    return json.dumps(o, default=str)
+
+def _loads(s):
+    if s is None:
+        return None
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        return s
+
+try:
+    _client = redis.Redis(
+        host=settings.redis_host,  # lower-case attribute from Settings
+        port=settings.redis_port
+    )
+    _client.ping()
+    logger.info("Connected to Redis @ %s", settings.redis_url)
+except Exception as exc:
+    logger.warning("Redis unavailable (%s) — falling back to stub", exc)
+    _client = _Stub()
+
+# Re-export helpers for other modules with the desired alias.
+client  = _client
+dumps   = _dumps
+loads   = _loads
+
+redis_client = client
 
 class RedisDB:
     """

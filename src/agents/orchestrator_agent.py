@@ -15,7 +15,7 @@ from src.memory.memory_manager import (
 )
 from src.utils.logging import logger
 from .expert_router import choose_specialists, get_handlers
-from .aggregation_agent import aggregate_stream
+from .aggregator_agent import aggregate_stream
 
 openai.api_key = settings.openai_api_key
 

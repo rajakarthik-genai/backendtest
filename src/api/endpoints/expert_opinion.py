@@ -6,7 +6,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Request, Query, HTTPException
 from fastapi.responses import JSONResponse
 from src.agents.expert_router import choose_specialists, get_handlers
-from src.agents.aggregation_agent import aggregate
+from src.agents.aggregator_agent import aggregate
 from src.chat.history import ChatHistory as Hist
 from src.utils.logging import logger
 

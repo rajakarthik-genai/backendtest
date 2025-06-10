@@ -1,4 +1,5 @@
 # Dependencies: PyMongo (pymongo)
+from src.config.settings import settings
 from pymongo import MongoClient
 from datetime import datetime
 
@@ -7,7 +8,9 @@ class MongoDBClient:
     MongoDB client for storing and retrieving medical records.
     Provides methods to insert structured records and query by patient/timeline.
     """
-    def __init__(self, uri: str, db_name: str, collection_name: str = "medical_records"):
+    def __init__(self, uri: str = None, db_name: str = None, collection_name: str = "medical_records"):
+        uri = uri or settings.mongo_uri
+        db_name = db_name or settings.mongo_db_name
         self.client = MongoClient(uri)
         self.db = self.client[db_name]
         self.collection = self.db[collection_name]

@@ -6,15 +6,18 @@ Backed by Redis for low-latency reads by agents during prompt construction.
 
 import json
 from typing import Dict, Any
+from urllib.parse import urlparse
 import redis
 from src.config.settings import settings
 from src.utils.logging import logger
 
-_redis = redis.Redis(
-    host=settings.redis_url.hostname,
-    port=settings.redis_url.port,
-    db=0,
-    decode_responses=True,
+# Convert settings.redis_url to str before parsing
+parsed = urlparse(str(settings.redis_url))
+redis_client = redis.Redis(
+    host=parsed.hostname,
+    port=parsed.port,
+    db=int(parsed.path.lstrip("/")) if parsed.path.lstrip("/") else 0,
+    decode_responses=True
 )
 
 
@@ -23,7 +26,7 @@ class LongTermMemory:
 
     @staticmethod
     def get(user_id: str) -> Dict[str, Any]:
-        data = _redis.get(f"ltm:{user_id}")
+        data = redis_client.get(f"ltm:{user_id}")
         return json.loads(data) if data else {}
 
     @staticmethod
@@ -40,5 +43,5 @@ class LongTermMemory:
                 current[k] = list(cur)
             else:
                 current[k] = v
-        _redis.set(f"ltm:{user_id}", json.dumps(current))
+        redis_client.set(f"ltm:{user_id}", json.dumps(current))
         logger.debug("LTM updated for %s – keys=%s", user_id, list(new))

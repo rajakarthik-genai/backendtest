@@ -4,7 +4,7 @@
 
 from uuid import uuid4
 from fastapi import APIRouter, Request, Query, HTTPException
-from fastapi.responses import EventSourceResponse
+from sse_starlette.sse import EventSourceResponse
 from src.agents.orchestrator_agent import orchestrator_agent
 from src.chat.history import ChatHistory as Hist
 from src.utils.logging import logger

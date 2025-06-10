@@ -188,4 +188,5 @@ dependencies = [
     "setuptools==80.9.0",
     "pymupdf>=1.26.0",
     "aiofiles>=24.1.0",
+    "sse-starlette>=2.3.6",
 ]

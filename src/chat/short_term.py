@@ -10,16 +10,18 @@ Stored as a Redis list of JSON messages.
 
 import json
 from typing import List, Dict
+from urllib.parse import urlparse
 import redis
 from src.config.settings import settings
 from src.utils.logging import logger
 
 _MAX_CTX = 20  # keep last N messages for context
 
-_redis = redis.Redis(
-    host=settings.redis_url.hostname,
-    port=settings.redis_url.port,
-    db=0,
+parsed = urlparse(str(settings.redis_url))
+redis_client = redis.Redis(
+    host=parsed.hostname,
+    port=parsed.port,
+    db=int(parsed.path.lstrip("/")) if parsed.path.lstrip("/") else 0,
     decode_responses=True,
 )
 
@@ -34,12 +36,12 @@ class ShortTermMemory:
     @staticmethod
     def add(user: str, doctor: str, conv: str, role: str, content: str) -> None:
         entry = json.dumps({"role": role, "content": content})
-        _redis.rpush(ShortTermMemory._key(user, doctor, conv), entry)
-        _redis.ltrim(ShortTermMemory._key(user, doctor, conv), -_MAX_CTX, -1)
+        redis_client.rpush(ShortTermMemory._key(user, doctor, conv), entry)
+        redis_client.ltrim(ShortTermMemory._key(user, doctor, conv), -_MAX_CTX, -1)
 
     @staticmethod
     def history(user: str, doctor: str, conv: str) -> List[Dict]:
-        raw = _redis.lrange(ShortTermMemory._key(user, doctor, conv), 0, -1)
+        raw = redis_client.lrange(ShortTermMemory._key(user, doctor, conv), 0, -1)
         return [json.loads(m) for m in raw]
 
     @staticmethod
@@ -51,5 +53,5 @@ class ShortTermMemory:
 
     @staticmethod
     def clear(user: str, doctor: str, conv: str) -> None:
-        _redis.delete(ShortTermMemory._key(user, doctor, conv))
+        redis_client.delete(ShortTermMemory._key(user, doctor, conv))
         logger.debug("STM cleared for conv %s", conv)
