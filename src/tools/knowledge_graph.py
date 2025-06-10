@@ -1,67 +1,59 @@
 """
-Neo4j helper for Cypher execution and simple natural-language mapping.
+Utility wrapper for Neo4j – run arbitrary Cypher queries or a naive NL->Cypher
+mapping for quick knowledge look-ups.
 """
+
 from __future__ import annotations
+
 from neo4j import GraphDatabase, Driver
 from src.utils.logging import logger
 
 _driver: Driver | None = None
 
 
-def init_graph(uri: str, user: str, password: str) -> None:
-    """
-    Initialise a global Neo4j driver. Safe to call repeatedly.
-    """
+def _init(uri: str, user: str, pwd: str):
     global _driver
     if _driver:
         return
     try:
-        _driver = GraphDatabase.driver(uri, auth=(user, password))
-        with _driver.session() as s:
-            s.run("RETURN 1")
-        logger.info("Neo4j connected.")
+        _driver = GraphDatabase.driver(uri, auth=(user, pwd))
+        with _driver.session() as sess:
+            sess.run("RETURN 1")
+        logger.info("tools.knowledge_graph – Neo4j connected.")
     except Exception as exc:
-        logger.error(f"Neo4j init error: {exc}")
+        logger.error("tools.knowledge_graph – connection error: %s", exc)
 
 
-def run_cypher(query: str, **params) -> list[dict]:
-    """
-    Run a Cypher query and return result records as dictionaries.
-    """
+def run(query: str, **params):
+    """Run Cypher and return list of dicts."""
     if _driver is None:
-        logger.warning("Neo4j not initialised.")
         return []
-    try:
-        with _driver.session() as session:
-            records = session.run(query, **params)
-            return [dict(rec) for rec in records]
-    except Exception as exc:
-        logger.error(f"Neo4j run_cypher error: {exc}")
-        return []
+    with _driver.session() as sess:
+        recs = sess.run(query, **params)
+        return [dict(r) for r in recs]
 
 
+# --- naïve NL -> Cypher mapping (demo) ------------------------------------ #
 def query_natural(nl: str) -> str:
     """
-    VERY simple NL → Cypher mapping for demo purposes.
-    Real deployment should use a proper NL-to-Cypher model or predefined templates.
+    VERY rudimentary mapping for demo purposes.
+    Accepts questions like:
+        "what causes chest pain"
+        "injuries to right shoulder"
     """
-    nl_lc = nl.lower().strip("?")
-    # Heuristic examples:
-    if nl_lc.startswith("what causes"):
-        # e.g., 'What causes migraine?'
-        symptom = nl_lc.replace("what causes", "").strip()
+    q = nl.lower()
+    if "injuries" in q and "shoulder" in q:
+        side = "Right" if "right" in q else "Left" if "left" in q else ""
+        part = f"{side} Shoulder".strip()
         cypher = (
-            "MATCH (s:Symptom)-[:INDICATES]->(c:Condition) "
-            "WHERE toLower(s.name) CONTAINS $symptom "
-            "RETURN DISTINCT c.name AS condition LIMIT 5"
+            "MATCH (p:Patient)-[:HAS_CONDITION|HAS_EVENT]->(e)-[:AFFECTS]->(b:BodyPart {name:$part}) "
+            "RETURN e.metric AS metric, e.timestamp AS ts ORDER BY ts"
         )
-        recs = run_cypher(cypher, symptom=symptom)
-        conds = [r["condition"] for r in recs]
-        return ", ".join(conds) if conds else f"No known causes found for {symptom}."
-    # Fallback: search node names
-    cypher = (
-        "MATCH (n) WHERE toLower(n.name) CONTAINS $name "
-        "RETURN DISTINCT n.name AS name, labels(n)[0] AS label LIMIT 5"
-    )
-    recs = run_cypher(cypher, name=nl_lc)
-    return "; ".join(f"{r['name']} ({r['label']})" for r in recs) or "No graph result."
+        res = run(cypher, part=part)
+        if not res:
+            return f"No injury events found for {part}."
+        return "; ".join(f"{r['metric']} ({r['ts']})" for r in res)
+    # fallback generic node search
+    cypher = "MATCH (n) WHERE toLower(n.name) CONTAINS $name RETURN DISTINCT n.name AS name LIMIT 5"
+    res = run(cypher, name=q)
+    return ", ".join(r["name"] for r in res) or "No graph result."

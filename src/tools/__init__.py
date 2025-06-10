@@ -1,26 +1,57 @@
 """
-tools package ── exposes *lazy-initialised* helpers for:
-    • Web search                    → tools.web_search
-    • Vector knowledge-base search  → tools.vector_store
-    • Neo4j knowledge-graph query   → tools.knowledge_graph
-    • Patient / report store (Mongo)→ tools.document_db
-Initial-iser helpers are no-op if already connected, so they can be called
-safely from `main.startup`, unit tests, or ad-hoc scripts.
+Tools package – convenience wrappers used by agents, ingestion, and endpoints.
 
-Usage (agents):
-    from tools import web_search, vector_store, knowledge_graph, document_db
+Exports:
+
+    init_mongo(uri)
+    init_graph(uri, user, pwd)
+    init_milvus(host, port)
+
+    # sub-modules (imported lazily by agents):
+    document_db
+    knowledge_graph
+    vector_store
+    web_search
 """
-from src.tools.web_search      import search
-from src.tools.vector_store    import init_milvus, query_text, add_document
-from src.tools.knowledge_graph import init_graph, run_cypher, query_natural
-from src.tools.document_db     import init_mongo, get_patient_profile, get_patient_record
-__all__ = [
-    # web search
-    "search",
-    # vector store
-    "init_milvus", "query_text", "add_document",
-    # graph
-    "init_graph", "run_cypher", "query_natural",
-    # document db
-    "init_mongo", "get_patient_profile", "get_patient_record",
-]
+
+from __future__ import annotations
+
+from importlib import import_module
+from types import ModuleType
+from typing import Optional
+from src.utils.logging import logger
+
+# Lazy-loader helpers (avoid heavy DB drivers until needed)
+_modules: dict[str, ModuleType] = {}
+
+def _load(name: str) -> ModuleType:
+    if name not in _modules:
+        _modules[name] = import_module(f"src.tools.{name}")
+    return _modules[name]
+
+
+# --------------------------------------------------------------------------- #
+# Public re-exports (lazy)
+# --------------------------------------------------------------------------- #
+def __getattr__(item):
+    if item in ("document_db", "knowledge_graph", "vector_store", "web_search"):
+        return _load(item)
+    raise AttributeError(item)
+
+
+# --------------------------------------------------------------------------- #
+# Init helpers called by app startup
+# --------------------------------------------------------------------------- #
+def init_mongo(uri: str):
+    """Initialise Mongo connection for tools.document_db."""
+    _load("document_db")._init(uri)
+
+
+def init_graph(uri: str, user: str, pwd: str):
+    """Initialise Neo4j driver for tools.knowledge_graph."""
+    _load("knowledge_graph")._init(uri, user, pwd)
+
+
+def init_milvus(host: str, port: int):
+    """Initialise Milvus collection for tools.vector_store."""
+    _load("vector_store")._init(host, port)

@@ -1,8 +1,9 @@
-import json
-import importlib.resources
-from src.agents.base_specialist import build_specialist
+import json, importlib.resources
+from .base_specialist import build_specialist
 
-with importlib.resources.files('src.prompts').joinpath('neurologist_prompt.json').open('r', encoding='utf-8') as f:
-    neurologist_prompt = json.load(f)
+with importlib.resources.files("src.prompts").joinpath(
+    "neurologist_prompt.json"
+).open(encoding="utf-8") as fp:
+    _PROMPT = json.load(fp)
 
-handle_query = build_specialist(neurologist_prompt)
+handle_query = build_specialist(_PROMPT)

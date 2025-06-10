@@ -1,27 +1,15 @@
 """
-Import-shortcut so other packages can do:
+Expose top-level agent handles so other modules can import:
 
-    from agents import cardiologist_agent
+    from src.agents import orchestrator_agent
 
-and access its functions (e.g., .handle_query).
+and call:
 
-Nothing is executed eagerly except prompt loading.
+    await orchestrator_agent.handle_request(...)
 """
-from importlib import import_module as _imp
-
-cardiologist_agent      = _imp("src.agents.cardiologist_agent")
-general_physician_agent = _imp("src.agents.general_physician_agent")
-orthopedist_agent       = _imp("src.agents.orthopedist_agent")
-neurologist_agent       = _imp("src.agents.neurologist_agent")
-
-from src.agents.aggregator_agent   import aggregator_agent
-from src.agents.orchestrator_agent import OrchestratorAgent
-
-__all__ = [
-    "cardiologist_agent",
-    "general_physician_agent",
-    "orthopedist_agent",
-    "neurologist_agent",
-    "OrchestratorAgent",
-    "aggregator_agent",
-]
+from .orchestrator_agent import orchestrator_agent  # noqa: F401
+from .aggregation_agent import aggregation_agent   # noqa: F401
+from .cardiologist_agent import cardiologist_agent  # noqa: F401
+from .general_physician_agent import general_physician_agent  # noqa: F401
+from .orthopedist_agent import orthopedist_agent  # noqa: F401
+from .neurologist_agent import neurologist_agent  # noqa: F401

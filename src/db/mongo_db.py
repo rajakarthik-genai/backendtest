@@ -1,184 +1,63 @@
-# File: db/mongo_db.py
-from src.config.settings import settings
+# Dependencies: PyMongo (pymongo)
 from pymongo import MongoClient
-from bson import ObjectId
-import datetime
+from datetime import datetime
 
-class MongoDB:
+class MongoDBClient:
     """
-    MongoDB client with schema validation and indexing for the digital twin backend.
+    MongoDB client for storing and retrieving medical records.
+    Provides methods to insert structured records and query by patient/timeline.
     """
-    def __init__(self, uri=None, db_name=None):
-        uri = uri or settings.MONGO_URI
-        if not db_name:
-            # Try to extract db from URI, else fallback
-            if "/" in uri.rsplit("@", 1)[-1]:
-                db_name = uri.rsplit("/", 1)[-1]
-            else:
-                db_name = "digital_twin"
+    def __init__(self, uri: str, db_name: str, collection_name: str = "medical_records"):
         self.client = MongoClient(uri)
         self.db = self.client[db_name]
-        self._setup_collections()
-
-    def _setup_collections(self):
-        # Define JSON schema validators for collections
-        user_schema = {
-            'bsonType': 'object',
-            'required': ['first_name', 'last_name'],
-            'properties': {
-                'first_name': {'bsonType': 'string'},
-                'last_name': {'bsonType': 'string'},
-                'dob': {'bsonType': 'date'},
-                'gender': {
-                    'enum': ['Male', 'Female', 'Other'],
-                    'description': 'Gender of the patient'
-                },
-                'email': {
-                    'bsonType': 'string',
-                    'pattern': r'^\S+@\S+\.\S+$',
-                    'description': 'Must be a valid email address'
-                }
-            }
-        }
-        report_schema = {
-            'bsonType': 'object',
-            'required': ['patient_id', 'content'],
-            'properties': {
-                'patient_id': {'bsonType': 'objectId'},
-                'content': {'bsonType': 'string'},
-                'uploaded_at': {'bsonType': 'date'},
-                'file_name': {'bsonType': 'string'}
-            }
-        }
-        event_schema = {
-            'bsonType': 'object',
-            'required': ['patient_id', 'event_type', 'timestamp'],
-            'properties': {
-                'patient_id': {'bsonType': 'objectId'},
-                'event_type': {'bsonType': 'string'},
-                'description': {'bsonType': 'string'},
-                'timestamp': {'bsonType': 'date'}
-            }
-        }
-        # Create or get collections with validators
-        if "users" not in self.db.list_collection_names():
-            self.db.create_collection("users", validator={'$jsonSchema': user_schema})
-        if "reports" not in self.db.list_collection_names():
-            self.db.create_collection("reports", validator={'$jsonSchema': report_schema})
-        if "health_events" not in self.db.list_collection_names():
-            self.db.create_collection("health_events", validator={'$jsonSchema': event_schema})
-
-        # Create indexes for efficient queries
-        self.db.users.create_index("email", unique=True)
-        self.db.users.create_index("last_name")
-        self.db.reports.create_index("patient_id")
-        self.db.health_events.create_index("patient_id")
-        self.db.health_events.create_index("timestamp")
-
-    # CRUD operations for Users
-    def create_user(self, first_name, last_name, dob=None, gender=None, email=None):
+        self.collection = self.db[collection_name]
+        # Ensure index on patient_id and timestamp for fast timeline queries
+        self.collection.create_index([("patient_id", 1), ("timestamp", 1)])
+    
+    def insert_records(self, records):
         """
-        Insert a new user document into the users collection.
+        Insert one or multiple records (dict or list of dicts) into MongoDB.
+        Each record should contain patient_id, timestamp, metric_name, value, unit, source.
         """
-        user = {
-            "first_name": first_name,
-            "last_name": last_name,
-            "dob": dob if dob else datetime.datetime.utcnow(),
-            "gender": gender,
-            "email": email
-        }
-        result = self.db.users.insert_one(user)
-        return str(result.inserted_id)
-
-    def get_user(self, user_id):
+        if records is None:
+            return
+        if isinstance(records, dict):
+            records = [records]
+        if len(records) == 0:
+            return
+        # Ensure timestamp is datetime for proper sorting/indexing
+        for rec in records:
+            if rec.get("timestamp") and not isinstance(rec["timestamp"], datetime):
+                try:
+                    rec["timestamp"] = datetime.fromisoformat(str(rec["timestamp"]))
+                except Exception:
+                    # If parsing fails, default to current time
+                    rec["timestamp"] = datetime.now()
+        self.collection.insert_many(records)
+    
+    def query_timeline(self, patient_id: str, start_date=None, end_date=None):
         """
-        Retrieve a user document by its ObjectId.
+        Retrieve all records for a given patient_id, optionally within a date range.
+        Returns a list of records sorted by timestamp.
         """
-        result = self.db.users.find_one({"_id": ObjectId(user_id)})
-        if result:
-            result["_id"] = str(result["_id"])
-        return result
-
-    def update_user(self, user_id, updates: dict):
+        query = {"patient_id": patient_id}
+        if start_date or end_date:
+            query["timestamp"] = {}
+            if start_date:
+                # ensure datetime for query
+                query["timestamp"]["$gte"] = start_date if isinstance(start_date, datetime) else datetime.fromisoformat(str(start_date))
+            if end_date:
+                query["timestamp"]["$lte"] = end_date if isinstance(end_date, datetime) else datetime.fromisoformat(str(end_date))
+        cursor = self.collection.find(query).sort("timestamp", 1)
+        return list(cursor)
+    
+    def get_records_by_metric(self, patient_id: str, metric_name: str):
         """
-        Update fields of a user document.
+        Retrieve all records for a given patient and metric name, sorted by time.
         """
-        self.db.users.update_one({"_id": ObjectId(user_id)}, {"$set": updates})
-
-    def delete_user(self, user_id):
-        """
-        Delete a user document.
-        """
-        self.db.users.delete_one({"_id": ObjectId(user_id)})
-
-    # CRUD operations for Reports
-    def create_report(self, patient_id, content, file_name=None):
-        """
-        Insert a new report document for a patient.
-        """
-        report = {
-            "patient_id": ObjectId(patient_id),
-            "content": content,
-            "file_name": file_name,
-            "uploaded_at": datetime.datetime.utcnow()
-        }
-        result = self.db.reports.insert_one(report)
-        return str(result.inserted_id)
-
-    def get_report(self, report_id):
-        """
-        Retrieve a report by its ObjectId.
-        """
-        result = self.db.reports.find_one({"_id": ObjectId(report_id)})
-        if result:
-            result["_id"] = str(result["_id"])
-            result["patient_id"] = str(result["patient_id"])
-        return result
-
-    def update_report(self, report_id, updates: dict):
-        """
-        Update fields of a report document.
-        """
-        self.db.reports.update_one({"_id": ObjectId(report_id)}, {"$set": updates})
-
-    def delete_report(self, report_id):
-        """
-        Delete a report document.
-        """
-        self.db.reports.delete_one({"_id": ObjectId(report_id)})
-
-    # CRUD operations for Health Events
-    def create_health_event(self, patient_id, event_type, description=None, timestamp=None):
-        """
-        Insert a health event associated with a patient.
-        """
-        event = {
-            "patient_id": ObjectId(patient_id),
-            "event_type": event_type,
-            "description": description,
-            "timestamp": timestamp if timestamp else datetime.datetime.utcnow()
-        }
-        result = self.db.health_events.insert_one(event)
-        return str(result.inserted_id)
-
-    def get_health_event(self, event_id):
-        """
-        Retrieve a health event by its ObjectId.
-        """
-        result = self.db.health_events.find_one({"_id": ObjectId(event_id)})
-        if result:
-            result["_id"] = str(result["_id"])
-            result["patient_id"] = str(result["patient_id"])
-        return result
-
-    def update_health_event(self, event_id, updates: dict):
-        """
-        Update fields of a health event.
-        """
-        self.db.health_events.update_one({"_id": ObjectId(event_id)}, {"$set": updates})
-
-    def delete_health_event(self, event_id):
-        """
-        Delete a health event document.
-        """
-        self.db.health_events.delete_one({"_id": ObjectId(event_id)})
+        cursor = self.collection.find({"patient_id": patient_id, "metric_name": metric_name}).sort("timestamp", 1)
+        return list(cursor)
+    
+    def close(self):
+        """Close the MongoDB connection."""
+        self.client.close()

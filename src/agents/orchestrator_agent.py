@@ -1,134 +1,63 @@
 """
-High-level planner → decides which specialist(s) to invoke via
-OpenAI function-calling and finally streams aggregated answer
-back to API layer.
+Main orchestrator agent: uses expert_router to pick specialists,
+collects answers, then streams aggregated reply.
 """
-from __future__ import annotations
-import json, openai, importlib.resources
-from src.utils.logging import logger
+
+from typing import Generator
+import json, openai
+from uuid import uuid4
+
+from src.config.settings import settings
 from src.memory.memory_manager import (
+    add_message_to_history,
     get_conversation_history,
     get_long_term_memory,
-    add_message_to_history,
 )
-from src.agents import (
-    cardiologist_agent,
-    general_physician_agent,
-    orthopedist_agent,
-    neurologist_agent,
-    aggregator_agent,
-)
+from src.utils.logging import logger
+from .expert_router import choose_specialists, get_handlers
+from .aggregation_agent import aggregate_stream
 
-with importlib.resources.files('src.prompts').joinpath('orchestrator_prompt.json').open('r', encoding='utf-8') as f:
-    orchestrator_prompt = json.load(f)
-
-# -------- function registry -------- #
-def _call_specialist(func_name: str, user_id: str, query: str) -> str:
-    mapping = {
-        "cardiologist":        cardiologist_agent.handle_query,
-        "general_physician":   general_physician_agent.handle_query,
-        "orthopedist":         orthopedist_agent.handle_query,
-        "neurologist":         neurologist_agent.handle_query,
-    }
-    return mapping[func_name](user_id, query)
+openai.api_key = settings.openai_api_key
 
 
 class OrchestratorAgent:
-    """Singleton orchestration engine."""
-
+    """Delegate question to specialists and aggregate answers."""
     def __init__(self):
-        self.prompt = orchestrator_prompt
-        self.functions_schema = self._build_fn_schema()
+        self.model = settings.openai_model_chat
 
-    # --------------------------------------------------------
-    def _build_fn_schema(self) -> list[dict]:
-        base = lambda name, desc: {
-            "name": name,
-            "description": desc,
-            "parameters": {
-                "type": "object",
-                "properties": {"query": {"type": "string"}},
-                "required": ["query"],
-            },
-        }
-        aggregator = {
-            "name": "aggregator",
-            "description": "Merge specialist answers into final reply.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "answers": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "List of specialist answers.",
-                    }
-                },
-                "required": ["answers"],
-            },
-        }
-        return [
-            base("cardiologist", "Heart & circulatory issues."),
-            base("general_physician", "General medical overview."),
-            base("orthopedist", "Bones, joints, muscles."),
-            base("neurologist", "Brain & nervous system."),
-            aggregator,
-        ]
-
-    # --------------------------------------------------------
-    def handle_request(self, user_id: str, user_msg: str):
+    async def handle_request(
+        self,
+        user_id: str,
+        doctor_id: str,
+        conv_id: str,
+        user_msg: str,
+    ) -> Generator[str, None, None]:
         """
-        Generator → yields SSE chunks comprising the final answer.
-
-        Loop:
-            - call GPT-4 function-calling
-            - if function requested → run specialist / aggregator
+        Yield SSE chunks of aggregated response.
         """
-        messages: list[dict] = [
-            {"role": "system", "content": self.prompt["system"]},
-        ]
-        # add memory
-        if (ltm := get_long_term_memory(user_id)):
-            messages.append({"role": "system", "content": f"User context: {ltm}"})
-        messages.extend(get_conversation_history(user_id))
-        messages.append({"role": "user", "content": user_msg})
+        # 0. Save user message in history
+        add_message_to_history(user_id, doctor_id, conv_id, "user", user_msg)
 
-        collected: list[str] = []
+        # 1. Decide specialists
+        roles = choose_specialists(user_msg)
+        handlers = get_handlers(roles)
+        logger.info("Orchestrator selected specialists: %s", roles)
 
-        while True:
-            resp = openai.ChatCompletion.create(
-                model="gpt-4-0613",
-                messages=messages,
-                functions=self.functions_schema,
-                function_call="auto",
-            )
-            msg = resp.choices[0].message
-            if msg.get("function_call"):
-                fn_name = msg["function_call"]["name"]
-                args    = json.loads(msg["function_call"].get("arguments", "{}") or "{}")
-                logger.debug(f"Orchestrator → call {fn_name} {args}")
-                if fn_name == "aggregator":
-                    # stream aggregator answer
-                    for chunk in aggregator_agent.combine_answers(user_id, collected):
-                        yield chunk
-                    break
-                # specialist
-                answer = _call_specialist(fn_name, user_id, args.get("query", user_msg))
-                collected.append(answer)
-                # push tool result back as function message
-                messages.extend([
-                    {"role": "assistant", "content": None,
-                     "function_call": {"name": fn_name, "arguments": json.dumps(args)}},
-                    {"role": "function", "name": fn_name, "content": answer},
-                ])
-                continue
-            # direct answer (rare)
-            full = msg.get("content", "")
-            for tok in full.split():
-                yield f"data: {{\"choices\":[{{\"delta\":{{\"content\":\"{tok} \"}}}}]}}\n\n"
-            yield "data: [DONE]\n\n"
-            add_message_to_history(user_id, "assistant", full)
-            break
+        # 2. Collect answers
+        answers = []
+        for role, handler in zip(roles, handlers):
+            try:
+                answer = handler(user_id, user_msg)
+                answers.append(f"{role.title()}:\n{answer}")
+            except Exception as exc:
+                answers.append(f"{role.title()} failed: {exc}")
 
+        # 3. Stream aggregated answer
+        for chunk in aggregate_stream(user_msg, answers):
+            yield chunk
 
-# public singleton
+        # 4. Store assistant message
+        add_message_to_history(user_id, doctor_id, conv_id, "assistant", "(see stream)")
+
+# singleton instance
 orchestrator_agent = OrchestratorAgent()

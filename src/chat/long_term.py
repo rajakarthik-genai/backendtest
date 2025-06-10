@@ -1,39 +1,44 @@
+"""
+Long-term memory (LTM) – per-user persistent profile / medical summary.
+
+Backed by Redis for low-latency reads by agents during prompt construction.
+"""
+
 import json
+from typing import Dict, Any
 import redis
 from src.config.settings import settings
+from src.utils.logging import logger
 
-redis_client = redis.Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=0, decode_responses=True)
+_redis = redis.Redis(
+    host=settings.redis_url.hostname,
+    port=settings.redis_url.port,
+    db=0,
+    decode_responses=True,
+)
 
-def get_long_term_memory(user_id: str) -> dict:
-    """Retrieve the long-term memory JSON for a given user."""
-    key = f"ltm:{user_id}"
-    data = redis_client.get(key)
-    if data:
-        return json.loads(data)
-    return {}
 
-def update_long_term_memory(user_id: str, new_data: dict) -> None:
-    """
-    Merge new_data into the existing long-term memory for the user.
-    Avoid duplicates (e.g. via set union) for list fields.
-    """
-    key = f"ltm:{user_id}"
-    existing = get_long_term_memory(user_id)
-    # Merge lists under each key, avoiding duplicates
-    for field, values in new_data.items():
-        if not isinstance(values, list):
-            existing[field] = values
-            continue
-        existing_list = existing.get(field, [])
-        # Combine unique entries
-        merged = existing_list.copy()
-        for item in values:
-            if item not in merged:
-                merged.append(item)
-        existing[field] = merged
-    # Save updated memory back to Redis
-    redis_client.set(key, json.dumps(existing))
+class LongTermMemory:
+    """Static helpers for CRUD on `ltm:<user_id>` keys."""
 
-def clear_long_term_memory(user_id: str) -> None:
-    """Clear the long-term memory for a user (optional)."""
-    redis_client.delete(f"ltm:{user_id}")
+    @staticmethod
+    def get(user_id: str) -> Dict[str, Any]:
+        data = _redis.get(f"ltm:{user_id}")
+        return json.loads(data) if data else {}
+
+    @staticmethod
+    def update(user_id: str, new: Dict[str, Any]) -> None:
+        """
+        Merge *new* into existing LTM without losing prior keys.
+        List-valued fields are merged by set union to avoid duplicates.
+        """
+        current = LongTermMemory.get(user_id)
+        for k, v in new.items():
+            if isinstance(v, list):
+                cur = set(current.get(k, []))
+                cur.update(v)
+                current[k] = list(cur)
+            else:
+                current[k] = v
+        _redis.set(f"ltm:{user_id}", json.dumps(current))
+        logger.debug("LTM updated for %s – keys=%s", user_id, list(new))

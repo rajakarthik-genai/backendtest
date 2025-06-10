@@ -1,73 +1,128 @@
-import json
-from typing import Callable
-import openai
+"""
+Factory helper to build a specialist agent that can:
+• reason step-by-step with its long prompt
+• call domain-agnostic tools (web search, vector search, graph query, doc DB)
+• return a final answer string
+"""
 
-from src.tools import document_db, vector_store, web_search, knowledge_graph
+from __future__ import annotations
+
+import json
+import openai
+from typing import Callable, Dict, List
+
+from src.config.settings import settings
+from src.tools import document_db, knowledge_graph, vector_store, web_search
 from src.utils.logging import logger
 
+openai.api_key = settings.openai_api_key
 
-def build_specialist(prompt_dict: dict) -> Callable[[str, str], str]:
+# --------------------------------------------------------------------------- #
+# Tool spec helpers (OpenAI function-calling JSON schemas)
+# --------------------------------------------------------------------------- #
+_tools_schema: List[dict] = [
+    {
+        "name": "search_web",
+        "description": "Search the web for current medical guidance.",
+        "parameters": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "query_vector_db",
+        "description": "Semantic similarity search in Milvus.",
+        "parameters": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "query_graph",
+        "description": "Run a natural-language query against the Neo4j graph.",
+        "parameters": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "query_document_db",
+        "description": "Retrieve a patient record of a given type "
+                       "(e.g. 'labs', 'imaging').",
+        "parameters": {
+            "type": "object",
+            "properties": {"record_type": {"type": "string"}},
+            "required": ["record_type"],
+        },
+    },
+]
+
+
+def _execute_tool(user_id: str, name: str, args: Dict) -> str:
+    """Dispatch a tool call to the correct helper."""
+    if name == "search_web":
+        return web_search.search(args["query"])
+    if name == "query_vector_db":
+        return vector_store.query_text(args["query"])
+    if name == "query_graph":
+        return knowledge_graph.query_natural(args["query"])
+    if name == "query_document_db":
+        return document_db.get_patient_record(user_id, args["record_type"])
+    return f"Tool '{name}' is unavailable."
+
+
+# --------------------------------------------------------------------------- #
+# Factory
+# --------------------------------------------------------------------------- #
+def build_specialist(prompt: Dict) -> Callable[[str, str], str]:
     """
-    Factory → returns a .handle_query(user_id, query) function
-    bound to supplied prompt.
+    Build a specialist handler.
+
+    Args:
+        prompt: dict with keys 'system' (system prompt) and 'agent' (name).
+
+    Returns:
+        handle_query(user_id, question) → str
     """
-    functions = [
-        {
-            "name": "search_web",
-            "description": "Search the web for up-to-date info.",
-            "parameters": {"type": "object", "properties": {"query": {"type": "string"}},"required": ["query"]},
-        },
-        {
-            "name": "query_vector_db",
-            "description": "Semantic search in medical knowledge base.",
-            "parameters": {"type": "object", "properties": {"query": {"type": "string"}},"required": ["query"]},
-        },
-        {
-            "name": "query_graph",
-            "description": "Query medical knowledge graph.",
-            "parameters": {"type": "object", "properties": {"query": {"type": "string"}},"required": ["query"]},
-        },
-        {
-            "name": "query_document_db",
-            "description": "Fetch patient record by type.",
-            "parameters": {"type": "object", "properties": {"record_type": {"type": "string"}},"required": ["record_type"]},
-        },
-    ]
 
-    def _run_tool(name: str, user_id: str, args: dict):
-        if name == "search_web":
-            return web_search.search(args.get("query", ""))
-        if name == "query_vector_db":
-            return vector_store.query_text(args.get("query", ""))
-        if name == "query_graph":
-            return knowledge_graph.query_natural(args.get("query", ""))
-        if name == "query_document_db":
-            return document_db.get_patient_record(user_id, args.get("record_type", ""))
-        return "Tool unavailable."
+    system_msg = (
+        prompt.get("system")
+        or f"You are {prompt.get('agent','Medical Specialist')}."
+    )
 
-    def handle_query(user_id: str, query: str) -> str:
+    def handle_query(user_id: str, question: str) -> str:
         messages = [
-            {"role": "system", "content": prompt_dict["system"]},
-            {"role": "user", "content": query},
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": question},
         ]
         while True:
             resp = openai.ChatCompletion.create(
-                model="gpt-4-0613",
+                model=settings.openai_model_chat,
                 messages=messages,
-                functions=functions,
+                functions=_tools_schema,
                 function_call="auto",
-                temperature=0.3,
+                temperature=0.2,
             )
             msg = resp.choices[0].message
-            if msg.get("function_call"):
-                fn = msg["function_call"]["name"]
-                args = json.loads(msg["function_call"].get("arguments", "{}") or "{}")
-                result = _run_tool(fn, user_id, args)
-                messages.extend([
-                    {"role": "assistant", "content": None,
-                     "function_call": {"name": fn, "arguments": json.dumps(args)}},
-                    {"role": "function", "name": fn, "content": result},
-                ])
-                continue
-            return msg.get("content", "")
+            if fc := msg.get("function_call"):
+                fn_name = fc["name"]
+                fn_args = json.loads(fc.get("arguments") or "{}")
+                logger.info("%s: tool-call %s(%s)", prompt["agent"], fn_name, fn_args)
+                result = _execute_tool(user_id, fn_name, fn_args)
+                # append assistant call + function result
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "function_call": {"name": fn_name, "arguments": json.dumps(fn_args)},
+                    }
+                )
+                messages.append({"role": "function", "name": fn_name, "content": result})
+                continue  # LLM will see function result
+            # final answer
+            return msg.get("content", "").strip()
+
     return handle_query

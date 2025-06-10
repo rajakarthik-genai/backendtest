@@ -1,120 +1,98 @@
-# File: db/neo4j_db.py
+# Dependencies: Neo4j Python Driver (neo4j)
 from neo4j import GraphDatabase
 
-class Neo4jDB:
+class Neo4jGraphBuilder:
     """
-    Neo4j client for graph modeling of patient health events.
+    Neo4j graph client for associating health events or metrics with body part nodes.
+    Creates Patient and BodyPart nodes and links them via relationships carrying event details.
     """
-    def __init__(self, uri, user, password):
+    def __init__(self, uri: str, user: str, password: str):
+        # Initialize Neo4j driver (Bolt protocol)
         self.driver = GraphDatabase.driver(uri, auth=(user, password))
-
+    
     def close(self):
+        """Close the Neo4j database connection."""
         self.driver.close()
-
-    def create_patient(self, user_id, first_name, last_name, dob=None, gender=None):
+    
+    def _identify_body_part(self, metric_name: str):
         """
-        Create or merge a Patient node with the given properties.
+        Identify a body part from the metric name if present.
+        Returns the standardized body part name or None if not identifiable.
         """
+        if not metric_name:
+            return None
+        name_lower = metric_name.lower()
+        # Common body part keywords
+        body_parts = ["heart", "lung", "liver", "kidney", "brain", "shoulder", "arm", "leg", "knee", "hip", "spine", "stomach"]
+        found_part = None
+        for part in body_parts:
+            if part in name_lower:
+                found_part = part.capitalize()
+                # Check for left/right context
+                if "right " in name_lower or "right-" in name_lower:
+                    if part in name_lower and name_lower.index(part) > 0 and name_lower[name_lower.index(part)-1] != ' ':
+                        # part of another word, continue (e.g., "heart" in "earth")
+                        pass
+                if "right" in name_lower and "right" in name_lower.split():
+                    found_part = "Right " + part.capitalize()
+                if "left" in name_lower and "left" in name_lower.split():
+                    found_part = "Left " + part.capitalize()
+                break
+        # Additional condition-to-part mapping
+        if not found_part:
+            if "cardiomegaly" in name_lower:
+                found_part = "Heart"
+            elif "hepatomegaly" in name_lower:
+                found_part = "Liver"
+            elif "nephropathy" in name_lower or "renal" in name_lower:
+                found_part = "Kidney"
+            elif "encephalopathy" in name_lower or "cereb" in name_lower:
+                found_part = "Brain"
+            elif "pneumonia" in name_lower or "pulmon" in name_lower:
+                found_part = "Lung"
+        return found_part
+    
+    def add_health_event(self, patient_id: str, metric_name: str, value=None, timestamp=None):
+        """
+        Link a health event to the corresponding body part in the Neo4j graph.
+        If the metric_name contains or implies a body part, creates/merges a BodyPart node 
+        and a Patient node, then creates a HAS_CONDITION relationship from Patient to BodyPart.
+        The relationship will carry properties: metric (name of condition/metric), value, timestamp.
+        """
+        body_part = self._identify_body_part(metric_name)
+        if not body_part:
+            # If no body part is identified, do nothing (event not spatially linked)
+            return
+        # Convert timestamp to string (ISO format) for storage, if provided
+        ts_str = None
+        if timestamp:
+            try:
+                ts_str = timestamp.isoformat()
+            except Exception:
+                ts_str = str(timestamp)
         with self.driver.session() as session:
-            result = session.write_transaction(
-                self._create_patient_tx, user_id, first_name, last_name, dob, gender
+            session.run(
+                "MERGE (p:Patient {id: $pid}) "
+                "MERGE (b:BodyPart {name: $bname}) "
+                "CREATE (p)-[:HAS_CONDITION {metric: $metric, value: $val, timestamp: $ts}]->(b)",
+                parameters={
+                    "pid": patient_id,
+                    "bname": body_part,
+                    "metric": metric_name,
+                    "val": (value if value is not None else ""), 
+                    "ts": (ts_str if ts_str else "")
+                }
             )
-            return result
-
-    @staticmethod
-    def _create_patient_tx(tx, user_id, first_name, last_name, dob, gender):
-        query = (
-            "MERGE (p:Patient {user_id: $user_id}) "
-            "SET p.first_name = $first_name, p.last_name = $last_name, "
-            "p.dob = $dob, p.gender = $gender "
-            "RETURN p"
-        )
-        res = tx.run(
-            query, user_id=user_id,
-            first_name=first_name, last_name=last_name,
-            dob=dob, gender=gender
-        )
-        record = res.single()
-        return record["p"] if record else None
-
-    def create_condition(self, name, description=None):
+    
+    def add_health_events_batch(self, patient_id: str, records):
         """
-        Create or merge a Condition node.
+        Process a list of records and add relevant health event relationships for each.
+        Only records that have an identifiable body part in the metric_name will be linked.
         """
-        with self.driver.session() as session:
-            result = session.write_transaction(
-                self._create_condition_tx, name, description
-            )
-            return result
-
-    @staticmethod
-    def _create_condition_tx(tx, name, description):
-        query = (
-            "MERGE (c:Condition {name: $name}) "
-            "SET c.description = $description "
-            "RETURN c"
-        )
-        res = tx.run(query, name=name, description=description)
-        record = res.single()
-        return record["c"] if record else None
-
-    def link_patient_condition(self, user_id, condition_name):
-        """
-        Create a HAS_CONDITION relationship between a Patient and a Condition.
-        """
-        with self.driver.session() as session:
-            session.write_transaction(
-                self._link_patient_condition_tx, user_id, condition_name
-            )
-
-    @staticmethod
-    def _link_patient_condition_tx(tx, user_id, condition_name):
-        query = (
-            "MATCH (p:Patient {user_id: $user_id}), (c:Condition {name: $condition_name}) "
-            "MERGE (p)-[:HAS_CONDITION]->(c)"
-        )
-        tx.run(query, user_id=user_id, condition_name=condition_name)
-
-    def create_event(self, event_id, patient_id, event_type, description=None, timestamp=None):
-        """
-        Create or merge an Event node and link it to a Patient.
-        """
-        with self.driver.session() as session:
-            session.write_transaction(
-                self._create_event_tx, event_id, patient_id, event_type, description, timestamp
-            )
-
-    @staticmethod
-    def _create_event_tx(tx, event_id, patient_id, event_type, description, timestamp):
-        query = (
-            "MERGE (e:Event {id: $event_id}) "
-            "SET e.event_type = $event_type, e.description = $description, e.timestamp = $timestamp "
-            "WITH e "
-            "MATCH (p:Patient {user_id: $patient_id}) "
-            "MERGE (p)-[:HAS_EVENT]->(e)"
-        )
-        tx.run(query, event_id=event_id, patient_id=patient_id,
-               event_type=event_type, description=description, timestamp=timestamp)
-
-    def get_patient_conditions(self, user_id):
-        """
-        Return all conditions linked to a patient.
-        """
-        with self.driver.session() as session:
-            result = session.run(
-                "MATCH (p:Patient {user_id: $user_id})-[:HAS_CONDITION]->(c:Condition) "
-                "RETURN c.name AS condition", user_id=user_id
-            )
-            return [record["condition"] for record in result]
-
-    def get_patient_events(self, user_id):
-        """
-        Return all events (with types) for a patient, ordered by timestamp.
-        """
-        with self.driver.session() as session:
-            result = session.run(
-                "MATCH (p:Patient {user_id: $user_id})-[:HAS_EVENT]->(e:Event) "
-                "RETURN e.event_type AS type, e.timestamp AS when "
-                "ORDER BY e.timestamp", user_id=user_id
-            )
-            return [{"type": record["type"], "when": record["when"]} for record in result]
+        if records is None:
+            return
+        for rec in records:
+            metric = rec.get("metric_name") or rec.get("name")
+            val = rec.get("value", None)
+            ts = rec.get("timestamp", None)
+            self.add_health_event(patient_id, metric, value=val, timestamp=ts)

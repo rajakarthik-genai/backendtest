@@ -1,49 +1,55 @@
-# agents/ingestion_agent.py
+"""
+Asynchronous ingestion task for uploaded PDFs/images.
+Extracts text, calls LLM for structuring, stores data.
+"""
 
-from src.tools import pdf_extractor
-from src.db import mongo_db, neo4j_db, milvus_db
-import openai, json, os, asyncio, logging
-GPT_MODEL = os.getenv("GPT_MODEL","gpt-4o-mini")
-log = logging.getLogger(__name__)
+import json, asyncio, openai, os
+from bson import ObjectId
 
-async def ingest_pdf(user_id:str, path:str):
-    # 1. extraction
-    raw, meta = pdf_extractor.extract(path)
-    report_id = await mongo_db.save_full_report(user_id, raw, meta)
-    # 2. GPT entity-insight
-    prompt = ("Identify labs, vitals, meds, injuries, organs, conditions, treatments "
-              "IN JSON keys exactly.  Infer conditions from abnormal values.")
-    resp = openai.chat.completions.create(
-        model=GPT_MODEL, temperature=0.0,
-        messages=[{"role":"system","content":prompt},
-                  {"role":"user","content":raw[:16000]}])
-    struct = json.loads(resp.choices[0].message.content)
-    date = meta.get("report_date")
-    # 3. store each entity (examples)
-    for lab in struct.get("lab_results",[]):
-        lab_id = await mongo_db.save_lab_result(user_id, report_id, lab)
-        await neo4j_db.merge_lab(user_id, lab, date)
-        for cond in struct.get("conditions",[]):
-            await neo4j_db.link_lab_condition(user_id, lab["name"], date, cond)
-    for cond in struct.get("conditions",[]):
-        await mongo_db.save_condition(user_id, report_id, cond)
-        await neo4j_db.merge_condition(user_id, cond)
-    for med in struct.get("medications",[]):
-        await mongo_db.save_medication(user_id, report_id, med)
-        await neo4j_db.merge_medication(user_id, med)
-        for cond in struct.get("conditions",[]):     # link med→condition
-            await neo4j_db.link_med_condition(med, cond)
-    for inj in struct.get("injuries",[]):
-        await mongo_db.save_injury(user_id, report_id, inj)
-        await neo4j_db.merge_injury(user_id, inj, date)
-        if meta.get("doctor_name"):
-            await neo4j_db.link_injury_doctor(inj["description"], meta["doctor_name"])
-    # 4. vectors by section (only if raw text exists)
-    if raw:
-        for idx,sec in enumerate(milvus_db.split_sections(raw)):
-            await milvus_db.upsert_vector(user_id, report_id, date,
-                                          sec["header"], sec["body"], idx)
-    # 5. timeline event
-    await mongo_db.save_event({"user_id":user_id,"report_id":report_id,
-                               "type":meta.get("test_type","Report"),
-                               "date":date})
+from src.utils.logging import logger
+from src.config.settings import settings
+from src.tools import pdf_extractor, document_db, vector_store
+from src.db.mongo_db import MongoDB
+from src.db.neo4j_db import Neo4jDB
+
+openai.api_key = settings.openai_api_key
+mongo = MongoDB()
+
+
+async def ingest_pdf(user_id: str, file_path: str, ingest_log_id: str):
+    logger.info("Ingestion started for %s", file_path)
+    # 1. Extract text
+    text = pdf_extractor.extract_pdf_text(file_path)
+    # 2. Ask GPT to structure
+    prompt = (
+        "Extract structured JSON with keys: lab_results, medications, conditions, injuries. "
+        "Keep raw values, include units."
+    )
+    try:
+        resp = openai.ChatCompletion.create(
+            model=settings.openai_model_chat,
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": text[:15000]},
+            ],
+            temperature=0,
+        )
+        data = json.loads(resp.choices[0].message.content)
+    except Exception as exc:
+        logger.error("LLM extraction failed: %s", exc)
+        mongo.db.ingest_logs.update_one(
+            {"_id": ObjectId(ingest_log_id)}, {"$set": {"status": "failed", "error": str(exc)}}
+        )
+        return
+    # 3. Save raw report
+    report_id = mongo.create_report(user_id, content=text, file_name=os.path.basename(file_path))
+    # 4. Process extracted data (simplified)
+    for cond in data.get("conditions", []):
+        mongo.db.conditions.insert_one({**cond, "user_id": user_id, "report_id": report_id})
+    # 5. Index report in Milvus
+    vector_store.add_document(report_id, text)
+    # 6. Mark ingestion completed
+    mongo.db.ingest_logs.update_one(
+        {"_id": ObjectId(ingest_log_id)}, {"$set": {"status": "completed"}}
+    )
+    logger.info("Ingestion complete for %s", file_path)

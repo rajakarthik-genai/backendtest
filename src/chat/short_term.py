@@ -1,26 +1,55 @@
+"""
+Short-term memory (STM) – per-conversation rolling context.
+
+Each chat session is keyed:
+
+    stm:<user_id>:<doctor_id>:<conv_id>
+
+Stored as a Redis list of JSON messages.
+"""
+
 import json
+from typing import List, Dict
 import redis
 from src.config.settings import settings
+from src.utils.logging import logger
 
-redis_client = redis.Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=0, decode_responses=True)
+_MAX_CTX = 20  # keep last N messages for context
 
-MAX_CTX = 20  # keep last 20 messages for context
+_redis = redis.Redis(
+    host=settings.redis_url.hostname,
+    port=settings.redis_url.port,
+    db=0,
+    decode_responses=True,
+)
 
-def add_message_to_stm(user_id: str, doctor_id: str, conv_id: str, role: str, text: str) -> None:
-    """Append a message to the short-term memory list (role is 'user' or 'assistant')."""
-    key = f"stm:{user_id}:{doctor_id}:{conv_id}"
-    entry = json.dumps({"role": role, "content": text})
-    redis_client.rpush(key, entry)
-    # Trim to last MAX_CTX entries to bound memory size
-    redis_client.ltrim(key, -MAX_CTX, -1)
 
-def get_short_term_memory(user_id: str, doctor_id: str, conv_id: str) -> list:
-    """Retrieve the list of recent messages (as dicts) for the session, in chronological order."""
-    key = f"stm:{user_id}:{doctor_id}:{conv_id}"
-    items = redis_client.lrange(key, 0, -1)
-    return [json.loads(item) for item in items]
+class ShortTermMemory:
+    """Static STM helper utilities."""
 
-def clear_short_term_memory(user_id: str, doctor_id: str, conv_id: str) -> None:
-    """Clear the short-term memory for this conversation session."""
-    key = f"stm:{user_id}:{doctor_id}:{conv_id}"
-    redis_client.delete(key)
+    @staticmethod
+    def _key(user: str, doctor: str, conv: str) -> str:
+        return f"stm:{user}:{doctor}:{conv}"
+
+    @staticmethod
+    def add(user: str, doctor: str, conv: str, role: str, content: str) -> None:
+        entry = json.dumps({"role": role, "content": content})
+        _redis.rpush(ShortTermMemory._key(user, doctor, conv), entry)
+        _redis.ltrim(ShortTermMemory._key(user, doctor, conv), -_MAX_CTX, -1)
+
+    @staticmethod
+    def history(user: str, doctor: str, conv: str) -> List[Dict]:
+        raw = _redis.lrange(ShortTermMemory._key(user, doctor, conv), 0, -1)
+        return [json.loads(m) for m in raw]
+
+    @staticmethod
+    def last_user_msg(user: str, doctor: str, conv: str) -> str | None:
+        for msg in reversed(ShortTermMemory.history(user, doctor, conv)):
+            if msg["role"] == "user":
+                return msg["content"]
+        return None
+
+    @staticmethod
+    def clear(user: str, doctor: str, conv: str) -> None:
+        _redis.delete(ShortTermMemory._key(user, doctor, conv))
+        logger.debug("STM cleared for conv %s", conv)

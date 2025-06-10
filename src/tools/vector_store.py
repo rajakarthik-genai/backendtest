@@ -1,131 +1,87 @@
 """
-Milvus helper (FAISS-GPU index) for semantic search & ingestion.
-
-Functions
----------
-init_milvus(host, port)          ▶ connect & lazy-load default collection.
-add_document(doc_id, text)       ▶ embed + upsert one document.
-query_text(query, top_k=3)       ▶ semantic search returning concatenated hits.
+Thin wrapper over Milvus – compute embeddings (OpenAI or SentenceTransformers)
+and provide insert/search helpers for agents.
 """
+
 from __future__ import annotations
 
-import os
+import openai, os
 from typing import List
-from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility
-
+from pymilvus import (
+    connections,
+    FieldSchema,
+    CollectionSchema,
+    DataType,
+    Collection,
+    utility,
+)
 from src.config.settings import settings
 from src.utils.logging import logger
 
-# Singleton-like globals
-_COLLECTION: Collection | None = None
-_DIM: int = 1536  # embedding dimension of ada-002
+# ------------ global handles ------------------------------------------------
+_collection: Collection | None = None
+_DIM = 1536  # default OpenAI ada-002 dimensionality
 
 
-def _get_collection_name() -> str:
-    return os.getenv("MILVUS_COLLECTION", "medical_knowledge")
+def _init(host: str, port: int):
+    connections.connect(alias="default", host=host, port=str(port))
+    _ensure()
 
 
-def _ensure_collection() -> Collection | None:
-    """
-    Create (if absent) and return the default collection with FAISS index.
-    """
-    global _COLLECTION
-    name = _get_collection_name()
+def _ensure():
+    global _collection
+    if _collection:
+        return
+    name = settings.milvus_collection
     if utility.has_collection(name):
-        _COLLECTION = Collection(name)
+        _collection = Collection(name)
     else:
-        logger.info(f"Milvus: creating collection '{name}'")
-        fields = [
-            FieldSchema(name="id", dtype=DataType.VARCHAR, is_primary=True, max_length=64),
-            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=_DIM),
-            FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=8192),
-        ]
-        schema = CollectionSchema(fields, description="Medical knowledge")
-        _COLLECTION = Collection(name, schema)
-        _COLLECTION.create_index(
-            "embedding",
-            {
-                "index_type": "IVF_FLAT",
-                "metric_type": "IP",
-                "params": {"nlist": 1024},
-            },
-        )
-    _COLLECTION.load()
-    return _COLLECTION
-
-
-def init_milvus(host: str = None, port: str | int = None) -> None:
-    """
-    Connect to Milvus and ensure the target collection is loaded.
-    Safe to call multiple times.
-    """
-    host = host or settings.MILVUS_HOST
-    port = port or settings.MILVUS_PORT
-    try:
-        connections.connect(alias="default", host=host, port=str(port))
-        _ensure_collection()
-        logger.info(f"Milvus connected at {host}:{port}")
-    except Exception as exc:
-        logger.error(f"Milvus init error: {exc}")
-
-
-def _embed(text: str) -> List[float]:
-    """
-    Get an OpenAI Ada embedding. Cache-aware if you employ your own cache upstream.
-    """
-    resp = openai.Embedding.create(model="text-embedding-ada-002", input=text[:8192])
-    return resp["data"][0]["embedding"]
-
-
-def add_document(doc_id: str, text: str) -> None:
-    """
-    Insert or update a single document in the collection.
-    """
-    if not text:
-        return
-    if _COLLECTION is None:
-        logger.warning("Milvus not initialised; skipping add_document.")
-        return
-    try:
-        vec = _embed(text)
-        _COLLECTION.upsert(
+        logger.info("tools.vector_store – creating collection '%s'", name)
+        schema = CollectionSchema(
             [
-                [doc_id],       # id field
-                [vec],          # embedding field
-                [text[:8191]],  # text field trimmed to max length
+                FieldSchema("id", DataType.VARCHAR, is_primary=True, max_length=64),
+                FieldSchema("patient_id", DataType.VARCHAR, max_length=64),
+                FieldSchema("embedding", DataType.FLOAT_VECTOR, dim=_DIM),
             ]
         )
-        _COLLECTION.flush()
-    except Exception as exc:
-        logger.error(f"Milvus add_document error: {exc}")
-
-
-def query_text(query: str, top_k: int = 3) -> str:
-    """
-    Run a semantic search and return concatenated top-k snippets.
-
-    Returns
-    -------
-    str
-        Short concatenation of texts from top hits (empty string if none).
-    """
-    if _COLLECTION is None:
-        logger.warning("Milvus not initialised; returning empty search result.")
-        return ""
-    if not query.strip():
-        return ""
-    try:
-        vec = _embed(query)
-        res = _COLLECTION.search(
-            data=[vec],
-            anns_field="embedding",
-            param={"metric_type": "IP", "params": {"nprobe": 10}},
-            limit=top_k,
-            output_fields=["text"],
+        _collection = Collection(name, schema)
+        _collection.create_index(
+            "embedding", {"index_type": "IVF_FLAT", "metric_type": "IP", "params": {"nlist": 2048}}
         )
-        hits = res[0]
-        snippets = [hit.entity.get("text") for hit in hits]
-        return " ".join(snippets)
+    _collection.load()
+
+
+# ------------------- helpers ------------------------------------------------
+def _embed(text: str) -> List[float]:
+    """Get OpenAI ada-002 embedding for text (fallback to dummy vector on error)."""
+    try:
+        resp = openai.Embedding.create(model="text-embedding-ada-002", input=text[:8192])
+        return resp["data"][0]["embedding"]
     except Exception as exc:
-        logger.error(f"Milvus query_text error: {exc}")
-        return ""
+        logger.error("Vector embed error: %s", exc)
+        return [0.0] * _DIM
+
+
+def insert_text(doc_id: str, patient_id: str, text: str):
+    _ensure()
+    vec = _embed(text)
+    _collection.upsert([[doc_id], [patient_id], [vec]])
+    _collection.flush()
+
+
+def query_text(query: str, top_k: int = 5, patient_filter: str | None = None) -> str:
+    _ensure()
+    vec = _embed(query)
+    expr = f'patient_id == "{patient_filter}"' if patient_filter else None
+    res = _collection.search(
+        [vec],
+        anns_field="embedding",
+        param={"metric_type": "IP", "params": {"nprobe": 16}},
+        limit=top_k,
+        expr=expr,
+        output_fields=["id", "patient_id"],
+    )
+    if not res or len(res[0]) == 0:
+        return "No semantic match."
+    snippets = [f"{hit.entity.get('id')} (score {hit.distance:.2f})" for hit in res[0]]
+    return "; ".join(snippets)
