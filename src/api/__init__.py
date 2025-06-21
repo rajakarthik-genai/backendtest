@@ -19,12 +19,12 @@ from src.api.endpoints import (
 )
 
 _ROUTERS = [
-    chat.router,
-    expert_opinion.router,
-    upload.router,
-    timeline.router,
-    anatomy.router,
-    events.router,
+    chat,
+    expert_opinion,
+    upload,
+    timeline,
+    anatomy,
+    events,
 ]
 
 

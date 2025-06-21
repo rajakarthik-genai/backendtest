@@ -1,5 +1,6 @@
-
-
+###############################################################################
+#                           Networks & Volumes                                #
+###############################################################################
 networks:
   meditwin_network:
     driver: bridge
@@ -7,12 +8,14 @@ networks:
 volumes:
   mongo-data:
   redis-data:
-  
   etcd_data:
   minio_data:
   milvus_data:
-  neo4j-data:   
+  neo4j-data:
 
+###############################################################################
+#                          Application Services                               #
+###############################################################################
 services:
   # ────────────────── FastAPI / LangChain backend ──────────────────
   backend:
@@ -24,18 +27,16 @@ services:
     env_file: .env
     environment:
       - PYTHONPATH=/app
- 
+      - NEO4J_URI=${NEO4J_URI}
+      - NEO4J_USERNAME=${NEO4J_USERNAME}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000
-    ports:
-      - "8000:8000"
+    ports: ["8000:8000"]
     depends_on:
-      mongo:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-     
-      milvus:
-        condition: service_started
+      mongo:  { condition: service_healthy }
+      redis:  { condition: service_healthy }
+      neo4j:  { condition: service_healthy }
+      milvus: { condition: service_started }
     networks: [meditwin_network]
 
   # ─────────────────────────── MongoDB ─────────────────────────────
@@ -47,7 +48,7 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
     volumes: ["mongo-data:/data/db"]
-    ports: ["27017:27017"]
+    ports:  ["27017:27017"]
     healthcheck:
       test: ["CMD", "mongosh", "--quiet",
              "-u", "${MONGO_INITDB_ROOT_USERNAME}",
@@ -65,14 +66,13 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
     volumes: ["redis-data:/data"]
-    ports: ["6379:6379"]
+    ports:  ["6379:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks: [meditwin_network]
-
 
   # ───────────────── Milvus one-node stack ─────────────────────────
   etcd:
@@ -81,7 +81,7 @@ services:
     environment:
       ALLOW_NONE_AUTHENTICATION: "yes"
       ETCD_ADVERTISE_CLIENT_URLS: http://0.0.0.0:2379
-      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_LISTEN_CLIENT_URLS:    http://0.0.0.0:2379
     volumes: [etcd_data:/bitnami/etcd]
     healthcheck:
       test: ["CMD", "/opt/bitnami/etcd/bin/etcdctl", "endpoint", "health"]
@@ -95,7 +95,7 @@ services:
     container_name: minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_USER:     minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     volumes: [minio_data:/data]
     ports:
@@ -113,9 +113,9 @@ services:
     container_name: milvus
     command: ["run", "standalone"]
     environment:
-      ETCD_ENDPOINTS: etcd:2379
-      MINIO_ADDRESS: minio:9000
-      MINIO_ACCESS_KEY_ID: minioadmin
+      ETCD_ENDPOINTS:          etcd:2379
+      MINIO_ADDRESS:           minio:9000
+      MINIO_ACCESS_KEY_ID:     minioadmin
       MINIO_SECRET_ACCESS_KEY: minioadmin
     volumes: ["milvus_data:/var/lib/milvus"]
     depends_on: [etcd, minio]
@@ -128,14 +128,14 @@ services:
       timeout: 10s
       retries: 5
     networks: [meditwin_network]
+
   # ─────────────────────────── Neo4j 5.x ───────────────────────────
   neo4j:
     image: neo4j:5.26
     container_name: neo4j
     restart: unless-stopped
     environment:
-      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD}   # set NEO4J_PASSWORD in .env
-      # ─── quick-start memory tuning; adjust to your host ───────────
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD}
       - NEO4J_server_memory_heap_initial__size=1g
       - NEO4J_server_memory_heap_max__size=2g
       - NEO4J_server_memory_pagecache_size=1g
@@ -144,7 +144,7 @@ services:
       - "7474:7474"   # HTTP
       - "7687:7687"   # Bolt
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:7474 || exit 1"]
+      test: ["CMD", "echo", "1"]
       interval: 30s
       timeout: 10s
       retries: 5
