@@ -5,16 +5,23 @@ Extracts text, calls LLM for structuring, stores data.
 
 import json, asyncio, openai, os
 from bson import ObjectId
+from langchain_neo4j import Neo4jGraph
 
 from src.utils.logging import logger
 from src.config.settings import settings
 from src.tools import pdf_extractor, document_db, vector_store
 from src.db.mongo_db import MongoDBClient as MongoDB
-from src.db.neo4j_db import Neo4jGraphBuilder as Neo4jGraph
 
 openai.api_key = settings.openai_api_key
 mongo = MongoDB()
-neo4j = Neo4jGraph()
+
+# Initialise the graph with required parameters
+graph = Neo4jGraph(
+    url=os.getenv("NEO4J_URI"),
+    username=os.getenv("NEO4J_USERNAME"),
+    password=os.getenv("NEO4J_PASSWORD"),
+    # refresh_schema=False,     # skips apoc.meta.data()
+)
 
 async def ingest_pdf(user_id: str, file_path: str, ingest_log_id: str):
     logger.info("Ingestion started for %s", file_path)
