@@ -8,7 +8,7 @@ and call:
     await orchestrator_agent.handle_request(...)
 """
 from .orchestrator_agent import orchestrator_agent  # noqa: F401
-from .aggregator_agent import aggregation_agent   # noqa: F401
+from .aggregator_agent import aggregator_agent   # noqa: F401
 from .cardiologist_agent import cardiologist_agent  # noqa: F401
 from .general_physician_agent import general_physician_agent  # noqa: F401
 from .orthopedist_agent import orthopedist_agent  # noqa: F401

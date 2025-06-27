@@ -111,16 +111,6 @@ class RedisDB:
         except Exception as e:
             logger.error(f"Failed to store chat message: {e}")
             return False
-
-    def store_message(
-        self,
-        user_id: str,
-        session_id: str,
-        message: Dict[str, Any],
-        ttl_hours: int = 24
-    ) -> bool:
-        """Store a message in user's session history (alias for store_chat_message)."""  
-        return self.store_chat_message(user_id, session_id, message, ttl_hours)
     
     def get_chat_history(
         self,

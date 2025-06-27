@@ -1,14 +1,14 @@
-# Dependencies: none (uses MongoDBClient from mongo_db.py)
+# Dependencies: none (uses MongoDB from mongo_db.py)
 from datetime import datetime
 
 class TimelineBuilder:
     """
     Provides methods to query a patient's timeline of medical events and analyze trends.
-    Utilizes MongoDBClient for data retrieval.
+    Utilizes MongoDB for data retrieval.
     """
     def __init__(self, mongo_client):
         """
-        Initialize with an instance of MongoDBClient for data storage/retrieval.
+        Initialize with an instance of MongoDB for data storage/retrieval.
         """
         self.mongo = mongo_client
     

@@ -48,3 +48,7 @@ def search(query: str, temperature: float = 0.0) -> str:
     except Exception as exc:
         logger.error("OpenAI search error: %s", exc)
         return f"Search failed: {exc}"
+
+
+# Alias for backwards compatibility
+search_web = search
