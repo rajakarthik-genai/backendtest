@@ -111,8 +111,9 @@ def get_knowledge_graph():
 
 
 def get_vector_store():
-    """Get vector store tool."""
-    return _load("vector_store")
+    """Get vector store tool (using new MilvusDB system)."""
+    from src.db.milvus_db import get_milvus
+    return get_milvus()
 
 
 def get_web_search():

@@ -6,7 +6,6 @@ from .milvus_db import MilvusDB, milvus_db, init_milvus
 
 # Export initialized singletons/aliases for use elsewhere
 mongo_db = MongoDB()
-# Initialize Neo4j and Milvus with settings
-init_graph(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
-init_milvus(settings.milvus_host, settings.milvus_port)
+# NOTE: Neo4j and Milvus are initialized during app startup in main.py
+# Do not initialize here to avoid import-time connection failures
 # redis_db is already initialized in redis_db.py

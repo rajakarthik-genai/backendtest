@@ -22,33 +22,40 @@ from src.utils.logging import logger, log_user_action
 from src.agents.orchestrator_agent import get_orchestrator
 from src.chat.short_term import get_short_term_memory
 from src.db.redis_db import get_redis
+from src.auth.dependencies import AuthenticatedUserId, CurrentUser
+from src.auth.models import User
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 @router.post("/message")
-async def send_message(request: ChatRequest) -> ChatResponse:
+async def send_message(
+    request: ChatRequest, 
+    current_user: User = Depends(CurrentUser)
+) -> ChatResponse:
     """
     Send a chat message and get a response.
     
     Non-streaming endpoint for simple request-response interactions.
     """
     try:
+        # Get user_id from JWT token
+        user_id = current_user.user_id
+        
         # Generate session ID if not provided
         session_id = request.session_id or str(uuid.uuid4())
         
         # Log user action
         log_user_action(
-            request.user_id,
+            user_id,
             "chat_message",
             {"session_id": session_id, "message_length": len(request.message)}
         )
         
         # Get orchestrator and process message
         orchestrator = await get_orchestrator()
-        
         response = await orchestrator.process_user_message(
-            user_id=request.user_id,
+            user_id=user_id,
             session_id=session_id,
             message=request.message
         )
@@ -58,7 +65,7 @@ async def send_message(request: ChatRequest) -> ChatResponse:
         
         # Store user message
         redis_client.store_chat_message(
-            request.user_id,
+            user_id,
             session_id,
             {
                 "role": "user",
@@ -69,7 +76,7 @@ async def send_message(request: ChatRequest) -> ChatResponse:
         
         # Store assistant response
         redis_client.store_chat_message(
-            request.user_id,
+            user_id,
             session_id,
             {
                 "role": "assistant", 
@@ -91,19 +98,25 @@ async def send_message(request: ChatRequest) -> ChatResponse:
 
 
 @router.post("/stream")
-async def stream_chat(request: ChatRequest):
+async def stream_chat(
+    request: ChatRequest,
+    current_user: User = Depends(CurrentUser)
+):
     """
     Stream chat responses using Server-Sent Events (SSE).
     
     Enables real-time streaming of agent responses for better UX.
     """
     try:
+        # Get user_id from JWT token
+        user_id = current_user.user_id
+        
         # Generate session ID if not provided
         session_id = request.session_id or str(uuid.uuid4())
         
         # Log user action
         log_user_action(
-            request.user_id,
+            user_id,
             "chat_stream",
             {"session_id": session_id, "message_length": len(request.message)}
         )
@@ -111,7 +124,7 @@ async def stream_chat(request: ChatRequest):
         # Store user message immediately
         redis_client = get_redis()
         redis_client.store_chat_message(
-            request.user_id,
+            user_id,
             session_id,
             {
                 "role": "user",
@@ -132,7 +145,7 @@ async def stream_chat(request: ChatRequest):
                 
                 # Stream response chunks
                 async for chunk in orchestrator.stream_response(
-                    user_id=request.user_id,
+                    user_id=user_id,
                     session_id=session_id,
                     message=request.message
                 ):
@@ -149,7 +162,7 @@ async def stream_chat(request: ChatRequest):
                 
                 # Store complete response
                 redis_client.store_chat_message(
-                    request.user_id,
+                    user_id,
                     session_id,
                     {
                         "role": "assistant",
@@ -183,7 +196,7 @@ async def stream_chat(request: ChatRequest):
 @router.get("/history/{session_id}")
 async def get_chat_history(
     session_id: str,
-    user_id: str,
+    current_user: User = Depends(CurrentUser),
     limit: int = 50
 ):
     """
@@ -191,10 +204,13 @@ async def get_chat_history(
     
     Args:
         session_id: Chat session identifier
-        user_id: User identifier for access control
+        current_user: Authenticated user from JWT token
         limit: Maximum number of messages to return
     """
     try:
+        # Get user_id from JWT token
+        user_id = current_user.user_id
+        
         redis_client = get_redis()
         
         # Get chat history from Redis
@@ -218,16 +234,19 @@ async def get_chat_history(
 @router.delete("/history/{session_id}")
 async def clear_chat_history(
     session_id: str,
-    user_id: str
+    current_user: User = Depends(CurrentUser)
 ):
     """
     Clear chat history for a specific session.
     
     Args:
         session_id: Chat session identifier
-        user_id: User identifier for access control
+        current_user: Authenticated user from JWT token
     """
     try:
+        # Get user_id from JWT token
+        user_id = current_user.user_id
+        
         redis_client = get_redis()
         
         # Delete chat history
@@ -245,14 +264,17 @@ async def clear_chat_history(
 
 
 @router.get("/sessions")
-async def get_user_sessions(user_id: str):
+async def get_user_sessions(current_user: User = Depends(CurrentUser)):
     """
     Get all chat sessions for a user.
     
     Args:
-        user_id: User identifier
+        current_user: Authenticated user from JWT token
     """
     try:
+        # Get user_id from JWT token
+        user_id = current_user.user_id
+        
         # This would typically query a sessions database
         # For now, return a placeholder response
         return {

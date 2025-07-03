@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from src.config.settings import settings
-from src.tools import web_search, vector_store, knowledge_graph, document_db, get_vector_store
+from src.tools import web_search, knowledge_graph, document_db, get_vector_store
 from src.db.mongo_db import get_mongo
 from src.db.neo4j_db import get_graph
 from src.utils.logging import logger
@@ -475,9 +475,26 @@ class BaseSpecialist(ABC):
     async def _vector_search(self, query: str, user_id: str) -> str:
         """Search vector database for similar content."""
         try:
-            from src.tools.vector_store import query_text
-            result = query_text(query, top_k=5, patient_filter=user_id)
-            return result
+            milvus_client = get_vector_store()
+            results = milvus_client.search_similar_documents(
+                user_id=user_id,
+                query_text=query,
+                limit=5,
+                score_threshold=0.7
+            )
+            
+            if not results:
+                return "No similar documents found"
+            
+            # Format results for context
+            snippets = []
+            for result in results:
+                content = result.get("content", "")[:200]  # Truncate for context
+                score = result.get("similarity_score", 0)
+                snippets.append(f"Content: {content}... (score: {score:.2f})")
+            
+            return "; ".join(snippets)
+            
         except Exception as e:
             logger.error(f"Vector search failed: {e}")
             return f"Vector search unavailable: {str(e)}"

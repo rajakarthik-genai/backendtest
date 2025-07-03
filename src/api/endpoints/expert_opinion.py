@@ -17,6 +17,7 @@ from src.db.neo4j_db import get_graph
 from src.tools import get_vector_store
 from src.db.redis_db import get_redis
 from src.utils.logging import logger, log_user_action
+from src.auth.dependencies import AuthenticatedUserId
 from src.config.settings import settings
 import json
 
@@ -43,7 +44,7 @@ class ExpertOpinionResponse(BaseModel):
 
 @router.post("/opinion", response_model=ExpertOpinionResponse)
 async def get_expert_opinion(
-    user_id: str = Query(..., description="User identifier"),
+    user_id: AuthenticatedUserId,
     request: ExpertOpinionRequest = ...,
     conversation_id: Optional[str] = Query(None, description="Existing conversation ID")
 ):

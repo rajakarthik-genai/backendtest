@@ -17,13 +17,14 @@ from src.utils.schema import TimelineRequest, TimelineResponse, TimelineEvent
 from src.utils.logging import logger, log_user_action
 from src.db.mongo_db import get_mongo
 from src.db.neo4j_db import get_graph
+from src.auth.dependencies import AuthenticatedUserId
 
 router = APIRouter(prefix="/timeline", tags=["timeline"])
 
 
 @router.get("/", response_model=TimelineResponse)
 async def get_timeline(
-    user_id: str = Query(..., description="User identifier"),
+    user_id: AuthenticatedUserId,
     start_date: Optional[str] = Query(None, description="Start date (ISO format)"),
     end_date: Optional[str] = Query(None, description="End date (ISO format)"),
     event_types: Optional[str] = Query(None, description="Comma-separated event types"),
@@ -154,7 +155,7 @@ async def get_timeline(
 
 @router.post("/event")
 async def create_timeline_event(
-    user_id: str,
+    user_id: AuthenticatedUserId,
     event_type: str,
     title: str,
     description: str,
@@ -229,7 +230,7 @@ async def create_timeline_event(
 
 @router.get("/summary")
 async def get_timeline_summary(
-    user_id: str = Query(..., description="User identifier"),
+    user_id: AuthenticatedUserId,
     days: int = Query(30, description="Number of days to summarize")
 ):
     """
@@ -311,7 +312,7 @@ async def get_timeline_summary(
 @router.delete("/event/{event_id}")
 async def delete_timeline_event(
     event_id: str,
-    user_id: str = Query(..., description="User identifier for access control")
+    user_id: AuthenticatedUserId
 ):
     """
     Delete a timeline event.
@@ -364,7 +365,7 @@ async def delete_timeline_event(
 @router.put("/event/{event_id}")
 async def update_timeline_event(
     event_id: str,
-    user_id: str = Query(..., description="User identifier"),
+    user_id: AuthenticatedUserId,
     title: Optional[str] = Form(None, description="Event title"),
     description: Optional[str] = Form(None, description="Event description"),
     event_type: Optional[str] = Form(None, description="Type of event"),
@@ -459,7 +460,7 @@ async def update_timeline_event(
 
 @router.get("/search")
 async def search_timeline_events(
-    user_id: str = Query(..., description="User identifier"),
+    user_id: AuthenticatedUserId,
     event_type: Optional[str] = Query(None, description="Filter by event type"),
     severity: Optional[str] = Query(None, description="Filter by severity"),
     start_date: Optional[str] = Query(None, description="Start date (ISO format)"),

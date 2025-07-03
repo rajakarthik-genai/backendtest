@@ -128,7 +128,7 @@ dependencies = [
     "pyasn1==0.6.1",
     "pyasn1-modules==0.4.2",
     "pycparser==2.22",
-    "pydantic==2.11.4",
+    "pydantic[email]==2.11.4",
     "pydantic-core==2.33.2",
     "pydantic-settings==2.9.1",
     "pygments==2.19.1",
@@ -197,6 +197,8 @@ dependencies = [
     "pytest-cov>=4.0.0",
     "httpx>=0.24.0",
     "pytest-mock>=3.10.0",
+    "passlib[bcrypt]>=1.7.4",
+    "python-jose[cryptography]>=3.5.0",
 ]
 
 [tool.pytest.ini_options]

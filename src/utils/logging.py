@@ -10,7 +10,9 @@ Features:
 
 import logging
 import sys
+import time
 from typing import Any, Dict
+from fastapi import Request, Response
 
 from src.config.settings import settings
 
@@ -109,3 +111,95 @@ def log_system_event(event: str, metadata: Dict[str, Any] = None):
         event,
         sanitized_metadata
     )
+
+
+def log_request(request: Request, response: Response = None, duration: float = None):
+    """
+    Log HTTP request details in a HIPAA-compliant manner.
+    
+    Args:
+        request: FastAPI request object
+        response: FastAPI response object (optional)
+        duration: Request duration in seconds (optional)
+    """
+    # Extract request details
+    method = request.method
+    url = str(request.url)
+    
+    # Sanitize URL - remove potential PII from query params
+    url_path = request.url.path
+    query_params = dict(request.query_params)
+    sanitized_params = sanitize_log_data(query_params)
+    
+    # Log request details
+    log_data = {
+        "method": method,
+        "path": url_path,
+        "query_params": sanitized_params,
+        "user_agent": request.headers.get("user-agent", "unknown"),
+        "content_type": request.headers.get("content-type", "unknown"),
+    }
+    
+    if response:
+        log_data["status_code"] = response.status_code
+        log_data["response_size"] = response.headers.get("content-length", "unknown")
+    
+    if duration:
+        log_data["duration_ms"] = round(duration * 1000, 2)
+    
+    # Determine log level based on status code
+    if response and response.status_code >= 500:
+        logger.error("API Request: %s", log_data)
+    elif response and response.status_code >= 400:
+        logger.warning("API Request: %s", log_data)
+    else:
+        logger.info("API Request: %s", log_data)
+
+
+def log_openai_request(endpoint: str, model: str, tokens_used: int = None, duration: float = None):
+    """
+    Log OpenAI API requests for monitoring and debugging.
+    
+    Args:
+        endpoint: OpenAI endpoint called
+        model: Model used
+        tokens_used: Number of tokens consumed (optional)
+        duration: Request duration in seconds (optional)
+    """
+    log_data = {
+        "service": "openai",
+        "endpoint": endpoint,
+        "model": model,
+    }
+    
+    if tokens_used:
+        log_data["tokens_used"] = tokens_used
+    
+    if duration:
+        log_data["duration_ms"] = round(duration * 1000, 2)
+    
+    logger.info("OpenAI Request: %s", log_data)
+
+
+def log_database_operation(database: str, operation: str, collection: str = None, duration: float = None):
+    """
+    Log database operations for monitoring.
+    
+    Args:
+        database: Database type (mongo, neo4j, milvus, redis)
+        operation: Operation type (read, write, update, delete)
+        collection: Collection/table name (optional)
+        duration: Operation duration in seconds (optional)
+    """
+    log_data = {
+        "database": database,
+        "operation": operation,
+    }
+    
+    if collection:
+        log_data["collection"] = collection
+    
+    if duration:
+        log_data["duration_ms"] = round(duration * 1000, 2)
+    
+    logger.info("DB Operation: %s", log_data)

@@ -46,6 +46,18 @@ class Settings(BaseSettings):
     # ── AgentOps ─────────────────────────────────────────────────────────────
     agentops_api_key: Optional[str] = Field(None, validation_alias="agentops_api_key")
 
+    # ── JWT Authentication ──────────────────────────────────────────────────
+    jwt_secret_key: str = Field(..., validation_alias="jwt_secret_key")
+    jwt_refresh_secret_key: Optional[str] = Field(None, validation_alias="jwt_refresh_secret_key")
+    jwt_algorithm: str = Field("HS256", validation_alias="jwt_algorithm")
+    access_token_expire_minutes: int = Field(15, validation_alias="access_token_expire_minutes")
+    refresh_token_expire_days: int = Field(7, validation_alias="refresh_token_expire_days")
+    jwt_require_auth: bool = Field(False, validation_alias="jwt_require_auth")
+
+    # ── Encryption ───────────────────────────────────────────────────────────
+    aes_encryption_key: str = Field(..., validation_alias="aes_encryption_key")
+    patient_id_salt: str = Field(..., validation_alias="patient_id_salt")
+
     # ── Misc ─────────────────────────────────────────────────────────────────
     debug: bool = Field(False, validation_alias="debug")
 

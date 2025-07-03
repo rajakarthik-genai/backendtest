@@ -2,17 +2,21 @@
 /anatomy – body-part–centric queries via Neo4j.
 """
 
-from fastapi import APIRouter, Query, Path
+from fastapi import APIRouter, Path, Depends
 from src.tools import knowledge_graph as kg
+from src.auth.dependencies import CurrentUser
+from src.auth.models import User
 
 router = APIRouter(prefix="/anatomy", tags=["anatomy"])
 
 
 @router.get("/")
-async def anatomy_overview(user_id: str = Query(...)):
+async def anatomy_overview(current_user: User = Depends(CurrentUser)):
     """
     Summarise issues grouped by BodyPart for the specified user.
     """
+    user_id = current_user.user_id
+    
     cypher = (
         "MATCH (p:Patient {id:$uid})-[:HAS_CONDITION|HAS_EVENT]->(rel)-[:AFFECTS]->(b:BodyPart) "
         "RETURN b.name AS body_part, "
@@ -24,9 +28,14 @@ async def anatomy_overview(user_id: str = Query(...)):
 
 @router.get("/{body_part}/timeline")
 async def part_timeline(
-    user_id: str = Query(...),
     body_part: str = Path(..., description="e.g. 'Right Shoulder' or 'Heart'"),
+    current_user: User = Depends(CurrentUser)
 ):
+    """
+    Get timeline of events for a specific body part.
+    """
+    user_id = current_user.user_id
+    
     cypher = (
         "MATCH (p:Patient {id:$uid})-[:HAS_CONDITION|HAS_EVENT]->(rel)-[:AFFECTS]->"
         "(b:BodyPart {name:$part}) "

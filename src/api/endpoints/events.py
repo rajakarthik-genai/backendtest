@@ -13,6 +13,7 @@ from src.db.mongo_db import get_mongo
 from src.db.neo4j_db import get_graph
 from src.utils.schema import TimelineEvent, EventsRequest, EventsResponse
 from src.utils.logging import logger, log_user_action
+from src.auth.dependencies import AuthenticatedUserId
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -40,7 +41,7 @@ class EventUpdate(BaseModel):
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_event(
-    user_id: str = Query(..., description="User identifier"),
+    user_id: AuthenticatedUserId,
     event: EventCreate = ...
 ):
     """

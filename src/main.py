@@ -6,6 +6,7 @@ Run via:
 """
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import agentops
 from src.config.settings import settings
 from src.api import attach_routers
@@ -14,27 +15,59 @@ from src.db.mongo_db import init_mongo
 from src.db.neo4j_db import init_graph
 from src.db.milvus_db import init_milvus
 from src.db.redis_db import init_redis
+from src.auth.middleware import JWTAuthMiddleware
+from src.middleware.request_logging import RequestLoggingMiddleware
+from src.middleware.request_logging import RequestLoggingMiddleware
 
 
 async def _startup():
     """Initialize DB/tool connections and AgentOps."""
+    errors = []
+    
+    # Try to initialize databases (optional for development)
     try:
-        # Initialize databases
         await init_mongo(settings.mongo_uri, settings.mongo_db_name)
+        logger.info("MongoDB initialized successfully")
+    except Exception as e:
+        logger.warning(f"MongoDB initialization failed: {e}")
+        errors.append("MongoDB")
+    
+    try:
         init_graph(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
+        logger.info("Neo4j initialized successfully")
+    except Exception as e:
+        logger.warning(f"Neo4j initialization failed: {e}")
+        errors.append("Neo4j")
+    
+    try:
         init_milvus(settings.milvus_host, settings.milvus_port)
+        logger.info("Milvus initialized successfully")
+    except Exception as e:
+        logger.warning(f"Milvus initialization failed: {e}")
+        errors.append("Milvus")
+    
+    try:
         init_redis(settings.redis_host, settings.redis_port)
-        
-        # Initialize AgentOps if API key provided
-        if settings.agentops_api_key:
+        logger.info("Redis initialized successfully")
+    except Exception as e:
+        logger.warning(f"Redis initialization failed: {e}")
+        errors.append("Redis")
+    
+    # Initialize AgentOps if API key provided
+    if settings.agentops_api_key:
+        try:
             agentops.init(settings.agentops_api_key)
             logger.info("AgentOps initialized")
-        
+        except Exception as e:
+            logger.warning(f"AgentOps initialization failed: {e}")
+    
+    if errors:
+        logger.warning(f"Some services failed to initialize: {', '.join(errors)}")
+        logger.info("Server will run in limited mode (authentication and basic APIs only)")
+    else:
         logger.info("All systems initialized successfully")
-        
-    except Exception as e:
-        logger.error(f"Startup failed: {e}")
-        raise
+    
+    logger.info("Server startup completed")
 
 
 app = FastAPI(
@@ -44,6 +77,24 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure appropriately for production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Add request logging middleware
+app.add_middleware(RequestLoggingMiddleware, log_requests=True)
+
+# Add JWT authentication middleware  
+# NOTE: Set require_auth=True for production with proper JWT tokens
+# For development/testing, you can use require_auth=False
+jwt_require_auth = getattr(settings, 'jwt_require_auth', False)
+app.add_middleware(JWTAuthMiddleware, require_auth=jwt_require_auth)
 
 # Attach API routers
 attach_routers(app)

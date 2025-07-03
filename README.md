@@ -48,6 +48,20 @@ This system consists of two coordinated services:
 ├── .env                            # Environment variables
 ├── requirements.txt                # Python dependencies
 ├── src/                            # Main application code
+├── tests/                          # Test suite
+│   ├── unit/                       # Unit tests
+│   ├── integration/                # Integration tests
+│   ├── data/                       # Test data files
+│   └── test_production_suite.py    # Production test suite
+├── docs/                           # Documentation
+│   ├── API_DOCUMENTATION.md        # API reference
+│   ├── AUTHENTICATION.md           # Auth guide
+│   ├── DEVELOPMENT.md              # Development guide
+│   ├── COMPREHENSIVE_TEST_REPORT.md # Test results
+│   ├── RAG_TESTING_REPORT.md       # RAG pipeline report
+│   └── IMPLEMENTATION_COMPLETE.md  # Implementation status
+├── neo4j/                          # Neo4j database files
+└── start.sh                       # Application startup script
 │   ├── main.py                     # FastAPI entrypoint
 │   ├── config/settings.py          # Configuration management
 │   ├── api/endpoints/              # REST API routes

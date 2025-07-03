@@ -24,6 +24,7 @@ from src.utils.logging import logger, log_user_action
 from src.db.mongo_db import get_mongo
 from src.db.redis_db import get_redis
 from src.agents.ingestion_agent import get_ingestion_agent
+from src.auth.dependencies import AuthenticatedUserId
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
@@ -35,7 +36,7 @@ MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 @router.post("/document", response_model=UploadResponse)
 async def upload_document(
     background_tasks: BackgroundTasks,
-    user_id: str,
+    user_id: AuthenticatedUserId,
     file: UploadFile = File(...),
     description: Optional[str] = None
 ):
@@ -146,7 +147,10 @@ async def upload_document(
 
 
 @router.get("/status/{document_id}")
-async def get_processing_status(document_id: str, user_id: str):
+async def get_processing_status(
+    document_id: str, 
+    user_id: AuthenticatedUserId
+):
     """
     Get the processing status of an uploaded document.
     
@@ -183,7 +187,10 @@ async def get_processing_status(document_id: str, user_id: str):
 
 
 @router.get("/documents")
-async def list_user_documents(user_id: str, limit: int = 20):
+async def list_user_documents(
+    user_id: AuthenticatedUserId, 
+    limit: int = 20
+):
     """
     List all uploaded documents for a user.
     
@@ -211,7 +218,10 @@ async def list_user_documents(user_id: str, limit: int = 20):
 
 
 @router.delete("/document/{document_id}")
-async def delete_document(document_id: str, user_id: str):
+async def delete_document(
+    document_id: str, 
+    user_id: AuthenticatedUserId
+):
     """
     Delete an uploaded document and its processed data.
     

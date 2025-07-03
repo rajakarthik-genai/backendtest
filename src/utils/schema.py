@@ -135,7 +135,6 @@ class UploadResponse(BaseModel):
 class ChatRequest(BaseModel):
     """Chat message request."""
     message: str = Field(..., description="User message")
-    user_id: str = Field(..., description="User identifier")
     session_id: Optional[str] = Field(None, description="Chat session ID")
     stream: bool = Field(False, description="Enable streaming response")
 
@@ -150,7 +149,6 @@ class ChatResponse(BaseModel):
 
 class TimelineRequest(BaseModel):
     """Timeline request."""
-    user_id: str = Field(..., description="User identifier")
     start_date: Optional[datetime] = Field(None, description="Timeline start date")
     end_date: Optional[datetime] = Field(None, description="Timeline end date")
     event_types: Optional[List[str]] = Field(None, description="Filter by event types")
