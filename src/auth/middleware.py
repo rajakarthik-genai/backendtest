@@ -1,5 +1,8 @@
 """
 Authentication middleware for automatic JWT token processing.
+
+This middleware validates JWT tokens issued by the external login service
+and extracts user information for use in protected endpoints.
 """
 
 from fastapi import Request, HTTPException, status

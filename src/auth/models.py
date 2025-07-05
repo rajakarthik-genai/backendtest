@@ -1,10 +1,13 @@
 """
-Authentication models for JWT tokens and user data.
+Authentication models for JWT token validation.
+
+This module contains only the models needed to validate JWT tokens 
+issued by the external login service.
 """
 
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 
 class TokenData(BaseModel):
@@ -24,60 +27,3 @@ class User(BaseModel):
     username: Optional[str] = None
     is_active: bool = True
     roles: List[str] = []  # For future role-based access control
-
-
-class UserCreate(BaseModel):
-    """User creation model for signup."""
-    username: str
-    email: EmailStr
-    password: str
-    full_name: Optional[str] = None
-
-
-class UserLogin(BaseModel):
-    """User login credentials."""
-    email: EmailStr
-    password: str
-
-
-class UserInDB(BaseModel):
-    """User model as stored in database."""
-    user_id: str
-    username: str
-    email: str
-    hashed_password: str
-    is_active: bool = True
-    created_at: datetime
-    roles: List[str] = []
-
-
-class JWTToken(BaseModel):
-    """JWT token response model."""
-    access_token: str
-    token_type: str = "bearer"
-    expires_in: int
-
-
-class TokenResponse(BaseModel):
-    """Complete token response with access and refresh tokens."""
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-    expires_in: int
-    refresh_expires_in: int
-    user_id: str
-
-
-class RefreshTokenRequest(BaseModel):
-    """Refresh token request model."""
-    refresh_token: str
-
-
-class UserResponse(BaseModel):
-    """User response model (without sensitive data)."""
-    user_id: str
-    username: str
-    email: str
-    is_active: bool
-    created_at: datetime
-    roles: List[str] = []

@@ -6,8 +6,8 @@ A comprehensive multi-agent RAG (Retrieval-Augmented Generation) backend system 
 
 This system consists of two coordinated services:
 
-1. **Login Service** (Port 8081) - Authentication with PostgreSQL
-2. **MediTwin Backend** (Port 8000) - Main API with MongoDB, Neo4j, Milvus, Redis
+1. **Login Service** (Port 8081) - User authentication and JWT token issuance with PostgreSQL
+2. **MediTwin Backend** (Port 8000) - Main API that validates JWT tokens and provides medical AI services with MongoDB, Neo4j, Milvus, Redis
 
 ## 🚀 Key Features
 
@@ -148,13 +148,14 @@ docker-compose logs -f backend
 
 ### API Endpoints
 
-#### Authentication (Port 8081)
+#### Authentication (External Login Service - Port 8081)
 - `POST /auth/signup` - User registration
 - `POST /auth/login` - Email/password login
 - `GET /auth/google` - Google OAuth login
 - `GET /users/me` - Current user profile
 
 #### MediTwin API (Port 8000)
+**Note: All endpoints require JWT tokens from the login service**
 - `POST /upload` - Upload medical documents
 - `POST /chat/stream` - Real-time chat with agents (SSE)
 - `POST /chat/expert_opinion` - Multi-specialist consultation

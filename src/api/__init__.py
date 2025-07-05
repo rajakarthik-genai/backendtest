@@ -10,7 +10,6 @@ New routers can be added to `_ROUTERS` list.
 from fastapi import FastAPI
 
 from src.api.endpoints import (
-    auth,
     chat,
     expert_opinion,
     upload,
@@ -20,7 +19,6 @@ from src.api.endpoints import (
 )
 
 _ROUTERS = [
-    auth,
     chat,
     expert_opinion,
     upload,
