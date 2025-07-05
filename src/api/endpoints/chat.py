@@ -31,7 +31,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 @router.post("/message")
 async def send_message(
     request: ChatRequest, 
-    current_user: User = Depends(CurrentUser)
+    current_user: CurrentUser
 ) -> ChatResponse:
     """
     Send a chat message and get a response.
@@ -100,7 +100,7 @@ async def send_message(
 @router.post("/stream")
 async def stream_chat(
     request: ChatRequest,
-    current_user: User = Depends(CurrentUser)
+    current_user: CurrentUser
 ):
     """
     Stream chat responses using Server-Sent Events (SSE).
@@ -196,7 +196,7 @@ async def stream_chat(
 @router.get("/history/{session_id}")
 async def get_chat_history(
     session_id: str,
-    current_user: User = Depends(CurrentUser),
+    current_user: CurrentUser,
     limit: int = 50
 ):
     """
@@ -234,7 +234,7 @@ async def get_chat_history(
 @router.delete("/history/{session_id}")
 async def clear_chat_history(
     session_id: str,
-    current_user: User = Depends(CurrentUser)
+    current_user: CurrentUser
 ):
     """
     Clear chat history for a specific session.
@@ -264,7 +264,7 @@ async def clear_chat_history(
 
 
 @router.get("/sessions")
-async def get_user_sessions(current_user: User = Depends(CurrentUser)):
+async def get_user_sessions(current_user: CurrentUser):
     """
     Get all chat sessions for a user.
     

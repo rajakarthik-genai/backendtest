@@ -52,12 +52,76 @@ async def get_authenticated_user(token: str = Depends(jwt_bearer)) -> User:
     return await get_current_user(token)
 
 
-async def get_current_user_dependency(token: str = Depends(jwt_bearer)) -> User:
+async def get_current_user_dependency(request: Request) -> User:
     """
     Async dependency to get current user from JWT token.
     This is the recommended dependency for protected endpoints.
+    
+    Handles both authenticated and unauthenticated scenarios based on settings.
     """
-    return await get_current_user(token)
+    # Import here to avoid circular import issues
+    from src.config.settings import settings
+    
+    # Check if auth is required
+    require_auth = getattr(settings, 'jwt_require_auth', True)
+    
+    # Get authorization header
+    auth_header = request.headers.get("Authorization")
+    
+    if not auth_header:
+        if require_auth:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authorization header required"
+            )
+        else:
+            # Return a default test user for development
+            return User(
+                user_id="test_user_123",
+                email="test@example.com",
+                username="testuser",
+                is_active=True,
+                roles=[]
+            )
+    
+    # Parse Bearer token
+    try:
+        scheme, token = auth_header.split(" ", 1)
+        if scheme.lower() != "bearer":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication scheme"
+            )
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Authorization header format"
+        )
+    
+    # Verify and decode token
+    from .jwt_auth import verify_token, decode_token
+    
+    if not verify_token(token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    token_data = decode_token(token)
+    if not token_data or not token_data.sub:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token: user data not found"
+        )
+    
+    # Create and return user object
+    return User(
+        user_id=token_data.sub,
+        email=token_data.email,
+        username=token_data.username,
+        is_active=True,
+        roles=[]
+    )
 
 
 # Type annotations for easier use

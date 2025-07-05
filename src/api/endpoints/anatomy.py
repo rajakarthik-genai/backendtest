@@ -11,7 +11,7 @@ router = APIRouter(prefix="/anatomy", tags=["anatomy"])
 
 
 @router.get("/")
-async def anatomy_overview(current_user: User = Depends(CurrentUser)):
+async def anatomy_overview(current_user: CurrentUser):
     """
     Summarise issues grouped by BodyPart for the specified user.
     """
@@ -28,8 +28,8 @@ async def anatomy_overview(current_user: User = Depends(CurrentUser)):
 
 @router.get("/{body_part}/timeline")
 async def part_timeline(
-    body_part: str = Path(..., description="e.g. 'Right Shoulder' or 'Heart'"),
-    current_user: User = Depends(CurrentUser)
+    current_user: CurrentUser,
+    body_part: str = Path(..., description="e.g. 'Right Shoulder' or 'Heart'")
 ):
     """
     Get timeline of events for a specific body part.

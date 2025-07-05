@@ -152,6 +152,85 @@ class MongoDB:
         except Exception as e:
             logger.error(f"Failed to retrieve medical records: {e}")
             return []
+
+    async def get_medical_record(
+        self,
+        user_id: str,
+        record_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Retrieve a specific medical record by ID."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            record = await self.db.medical_records.find_one({
+                "user_id": hashed_user_id,
+                "_id": ObjectId(record_id)
+            })
+            
+            if record:
+                # Remove user_id from response for security
+                record.pop("user_id", None)
+                record["_id"] = str(record["_id"])
+                return record
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve medical record {record_id}: {e}")
+            return None
+
+    async def update_medical_record(
+        self,
+        user_id: str,
+        record_id: str,
+        update_data: Dict[str, Any]
+    ) -> bool:
+        """Update a specific medical record."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            # Add updated timestamp
+            update_data["updated_at"] = datetime.utcnow()
+            
+            result = await self.db.medical_records.update_one(
+                {"user_id": hashed_user_id, "_id": ObjectId(record_id)},
+                {"$set": update_data}
+            )
+            
+            return result.modified_count > 0
+            
+        except Exception as e:
+            logger.error(f"Failed to update medical record {record_id}: {e}")
+            return False
+
+    async def delete_medical_record(
+        self,
+        user_id: str,
+        record_id: str
+    ) -> bool:
+        """Delete a specific medical record."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            result = await self.db.medical_records.delete_one({
+                "user_id": hashed_user_id,
+                "_id": ObjectId(record_id)
+            })
+            
+            return result.deleted_count > 0
+            
+        except Exception as e:
+            logger.error(f"Failed to delete medical record {record_id}: {e}")
+            return False
     
     async def store_user_pii(self, user_id: str, pii_data: Dict[str, Any]) -> bool:
         """Store encrypted PII data for a user."""

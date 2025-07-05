@@ -39,6 +39,29 @@ This system consists of two coordinated services:
 - **Tesseract OCR**: Scanned document processing
 - **PDFPlumber**: Text extraction from PDFs
 
+## 🧪 Testing
+
+This project includes a comprehensive testing suite:
+
+- **Comprehensive Test Suite**: `comprehensive_test_suite.py` - Full API endpoint testing
+- **Unit Tests**: `tests/unit/` - Individual component testing  
+- **Integration Tests**: `tests/integration/` - API integration testing
+
+See [TESTING.md](TESTING.md) for detailed testing instructions.
+
+### Quick Test
+
+```bash
+# Run comprehensive endpoint tests
+python comprehensive_test_suite.py
+
+# Run unit tests
+pytest tests/unit/ -v
+
+# Run all tests
+pytest tests/ -v
+```
+
 ## 📁 Project Structure
 
 ```

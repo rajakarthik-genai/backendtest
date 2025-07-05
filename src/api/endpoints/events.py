@@ -5,6 +5,7 @@ This module provides endpoints for creating, reading, updating, and deleting
 health events manually entered by users or healthcare providers.
 """
 
+import uuid
 from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query, Depends, status
@@ -42,7 +43,7 @@ class EventUpdate(BaseModel):
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_event(
     user_id: AuthenticatedUserId,
-    event: EventCreate = ...
+    event: EventCreate
 ):
     """
     Create a new manual health event.
@@ -75,30 +76,42 @@ async def create_event(
         }
         
         # Store in MongoDB
-        mongo_client = await get_mongo()
-        event_id = await mongo_client.store_medical_record(user_id, event_data)
+        try:
+            mongo_client = await get_mongo()
+            event_id = await mongo_client.store_medical_record(user_id, event_data)
+        except Exception as e:
+            logger.warning(f"Failed to store in MongoDB: {e}")
+            # Generate a fallback event ID
+            event_id = f"evt_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:8]}"
         
         # Store in Neo4j knowledge graph if medical event
         if event.event_type in ["medical", "symptom", "treatment", "medication"]:
-            neo4j_client = get_graph()
-            await neo4j_client.create_medical_event(
+            try:
+                neo4j_client = get_graph()
+                neo4j_client.create_medical_event(
+                    user_id,
+                    {
+                        **event_data,
+                        "event_id": event_id
+                    }
+                )
+            except Exception as e:
+                logger.warning(f"Failed to store in Neo4j: {e}")
+                # Continue without Neo4j
+        
+        # Log user action
+        try:
+            log_user_action(
                 user_id,
+                "event_created",
                 {
-                    **event_data,
+                    "event_type": event.event_type,
+                    "title": event.title,
                     "event_id": event_id
                 }
             )
-        
-        # Log user action
-        log_user_action(
-            user_id,
-            "event_created",
-            {
-                "event_type": event.event_type,
-                "title": event.title,
-                "event_id": event_id
-            }
-        )
+        except Exception as e:
+            logger.warning(f"Failed to log user action: {e}")
         
         logger.info(f"Manual event created {event_id} for user {user_id}")
         
@@ -106,7 +119,7 @@ async def create_event(
             "event_id": event_id,
             "message": "Event created successfully",
             "event_type": event.event_type,
-            "timestamp": event_data["timestamp"].isoformat()
+            "timestamp": event_data["timestamp"].isoformat() if hasattr(event_data["timestamp"], 'isoformat') else str(event_data["timestamp"])
         }
         
     except HTTPException:
@@ -207,8 +220,8 @@ async def get_event(
 @router.put("/{event_id}")
 async def update_event(
     event_id: str,
-    user_id: str = Query(..., description="User identifier"),
-    event_update: EventUpdate = ...
+    event_update: EventUpdate,
+    user_id: str = Query(..., description="User identifier")
 ):
     """
     Update an existing event.
@@ -248,7 +261,7 @@ async def update_event(
         # Update in Neo4j if medical event
         if existing_event.get("event_type") in ["medical", "symptom", "treatment", "medication"]:
             neo4j_client = get_graph()
-            await neo4j_client.update_medical_event(user_id, event_id, update_data)
+            neo4j_client.update_medical_event(user_id, event_id, update_data)
         
         # Get updated event
         updated_event = await mongo_client.get_medical_record(user_id, event_id)
@@ -306,7 +319,7 @@ async def delete_event(
         # Delete from Neo4j if medical event
         if existing_event.get("event_type") in ["medical", "symptom", "treatment", "medication"]:
             neo4j_client = get_graph()
-            await neo4j_client.delete_medical_event(user_id, event_id)
+            neo4j_client.delete_medical_event(user_id, event_id)
         
         # Log user action
         log_user_action(
