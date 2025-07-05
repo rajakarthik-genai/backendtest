@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediTwin Frontend - JWT Authentication Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .auth-section {
+            display: block;
+        }
+
+        .dashboard-section {
+            display: none;
+        }
+
+        .tabs {
+            display: flex;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 15px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            font-weight: 600;
+        }
+
+        .form-container {
+            display: none;
+        }
+
+        .form-container.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 15px;
+        }
+
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
+        }
+
+        .message {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #c3e6cb;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #f5c6cb;
+        }
+
+        .user-info {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 25px;
+        }
+
+        .user-info h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+
+        .user-detail {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0;
+            padding: 8px 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .user-detail:last-child {
+            border-bottom: none;
+        }
+
+        .user-detail strong {
+            color: #495057;
+        }
+
+        .token-info {
+            background: #fff3cd;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 25px;
+            border: 2px solid #ffeaa7;
+        }
+
+        .token-display {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            word-break: break-all;
+            max-height: 120px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            color: #495057;
+        }
+
+        .api-demo {
+            background: #e7f3ff;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 25px;
+            border: 2px solid #bee5eb;
+        }
+
+        .api-demo h4 {
+            color: #0c5460;
+            margin-bottom: 15px;
+        }
+
+        .btn-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 600px) {
+            .btn-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏥 MediTwin</h1>
+            <p>Secure JWT Authentication System</p>
+        </div>
+
+        <div class="content">
+            <div id="message" class="message" style="display: none;"></div>
+
+            <!-- Authentication Section -->
+            <div class="auth-section" id="authSection">
+                <div class="tabs">
+                    <button class="tab active" onclick="showTab('login')">Login</button>
+                    <button class="tab" onclick="showTab('signup')">Sign Up</button>
+                </div>
+
+                <!-- Login Form -->
+                <div id="loginForm" class="form-container active">
+                    <div style="margin-bottom: 20px; padding: 15px; background: #e7f3ff; border-radius: 10px; border: 2px solid #bee5eb;">
+                        <h4 style="margin: 0 0 10px 0; color: #0c5460;">🔧 Debug Tools</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <button type="button" class="btn btn-secondary" onclick="testBackendConnection()">Test Backend</button>
+                            <button type="button" class="btn btn-secondary" onclick="testCORS()">Test CORS</button>
+                        </div>
+                    </div>
+                    
+                    <form onsubmit="handleLogin(event)">
+                        <div class="form-group">
+                            <label for="loginEmail">Email Address</label>
+                            <input type="email" id="loginEmail" required placeholder="your@email.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="loginPassword">Password</label>
+                            <input type="password" id="loginPassword" required placeholder="Your password">
+                        </div>
+                        <button type="submit" class="btn">Sign In</button>
+                    </form>
+                </div>
+
+                <!-- Sign Up Form -->
+                <div id="signupForm" class="form-container">
+                    <form id="signupFormElement">
+                        <div class="form-group">
+                            <label for="regEmail">Email Address</label>
+                            <input type="email" id="regEmail" required placeholder="your@email.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="regUsername">Username</label>
+                            <input type="text" id="regUsername" required minlength="3" maxlength="20" placeholder="Choose a username">
+                        </div>
+                        <div class="form-group">
+                            <label for="regFirstName">First Name</label>
+                            <input type="text" id="regFirstName" required placeholder="John">
+                        </div>
+                        <div class="form-group">
+                            <label for="regLastName">Last Name</label>
+                            <input type="text" id="regLastName" required placeholder="Doe">
+                        </div>
+                        <div class="form-group">
+                            <label for="regPassword">Password</label>
+                            <input type="password" id="regPassword" required minlength="8" placeholder="Strong password (8+ chars, mixed case, number)">
+                        </div>
+                        <button type="submit" class="btn">Create Account</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Dashboard Section -->
+            <div class="dashboard-section" id="dashboardSection">
+                <div class="user-info">
+                    <h3>👋 Welcome Back!</h3>
+                    <div class="user-detail">
+                        <strong>User ID:</strong>
+                        <span id="userId">-</span>
+                    </div>
+                    <div class="user-detail">
+                        <strong>Email:</strong>
+                        <span id="userEmail">-</span>
+                    </div>
+                    <div class="user-detail">
+                        <strong>Username:</strong>
+                        <span id="userUsername">-</span>
+                    </div>
+                    <div class="user-detail">
+                        <strong>Full Name:</strong>
+                        <span id="userFullName">-</span>
+                    </div>
+                    <div class="user-detail">
+                        <strong>Admin Status:</strong>
+                        <span id="userAdmin">-</span>
+                    </div>
+                </div>
+
+                <div class="token-info">
+                    <h4>🔑 JWT Access Token</h4>
+                    <div id="accessToken" class="token-display">Loading...</div>
+                    <p style="margin-top: 10px; color: #856404; font-size: 14px;">
+                        ⏰ Token expires in 15 minutes. Use refresh button before expiry.
+                    </p>
+                </div>
+
+                <div class="api-demo">
+                    <h4>🚀 API Testing</h4>
+                    <p>Test the protected endpoints. All requests use JWT for authentication and automatically extract user_id from the token:</p>
+                    
+                    <div class="btn-grid">
+                        <button class="btn btn-success" onclick="testUserProfile()">Get Profile</button>
+                        <button class="btn btn-success" onclick="getUserData()">Get My Data</button>
+                        <button class="btn btn-success" onclick="createDocument()">Create Document</button>
+                        <button class="btn btn-warning" onclick="refreshToken()">Refresh Token</button>
+                    </div>
+                </div>
+
+                <div class="api-demo" style="background: #f0f8ff; border-color: #b8daff;">
+                    <h4>🔧 Network Testing</h4>
+                    <p>Debug network connectivity issues:</p>
+                    
+                    <div class="btn-grid">
+                        <button class="btn btn-success" onclick="testBackendConnection()">Test Backend</button>
+                        <button class="btn btn-success" onclick="testCORS()">Test CORS</button>
+                    </div>
+                </div>
+
+                <div class="btn-grid">
+                    <button class="btn btn-secondary" onclick="logout()">Logout</button>
+                    <button class="btn btn-secondary" onclick="logoutAll()">Logout All</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration - Using local backend for testing
+        const API_BASE_URL = 'http://localhost:8081';
+        
+        // Default headers for all API calls
+        const getDefaultHeaders = () => ({
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'ngrok-skip-browser-warning': 'true'  // Skip ngrok browser warning
+        });
+
+        const getAuthHeaders = () => ({
+            ...getDefaultHeaders(),
+            'Authorization': `Bearer ${accessToken}`
+        });
+        
+        // Global state
+        let accessToken = localStorage.getItem('accessToken');
+        let refreshTokenValue = localStorage.getItem('refreshToken');
+        let currentUser = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            if (accessToken) {
+                getCurrentUser();
+            }
+            
+            // Add event listener for signup form
+            const signupForm = document.getElementById('signupFormElement');
+            if (signupForm) {
+                signupForm.addEventListener('submit', handleSignup);
+            }
+        });
+
+        // Tab switching
+        function showTab(tabName) {
+            document.querySelectorAll('.form-container').forEach(form => {
+                form.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            document.getElementById(tabName + 'Form').classList.add('active');
+            
+            // Find and activate the corresponding tab button
+            const tabButtons = document.querySelectorAll('.tab');
+            tabButtons.forEach(tab => {
+                if (tab.getAttribute('onclick').includes(`'${tabName}'`)) {
+                    tab.classList.add('active');
+                }
+            });
+        }
+
+        // Show message
+        function showMessage(text, type = 'success') {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = text;
+            messageDiv.className = `message ${type}`;
+            messageDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        // Handle signup
+        async function handleSignup(event) {
+            event.preventDefault();
+            
+            const form = event.target;
+            const submitBtn = form.querySelector('button[type="submit"]');
+            submitBtn.textContent = 'Creating Account...';
+            submitBtn.disabled = true;
+
+            const formData = {
+                email: document.getElementById('regEmail').value,
+                username: document.getElementById('regUsername').value,
+                first_name: document.getElementById('regFirstName').value,
+                last_name: document.getElementById('regLastName').value,
+                password: document.getElementById('regPassword').value
+            };
+
+            try {
+                console.log('Attempting signup to:', `${API_BASE_URL}/auth/signup`);
+                console.log('Sending data:', formData);
+                
+                const response = await fetch(`${API_BASE_URL}/auth/signup`, {
+                    method: 'POST',
+                    headers: getDefaultHeaders(),
+                    mode: 'cors',
+                    credentials: 'omit',
+                    body: JSON.stringify(formData)
+                });
+
+                console.log('Signup response status:', response.status);
+
+                // Handle both 200 and 201 as successful
+                if (response.status === 201 || response.status === 200) {
+                    const data = await response.json();
+                    console.log('Signup response data:', data);
+                    showMessage('🎉 Account created successfully! Please sign in.', 'success');
+                    showTab('login');
+                    form.reset();
+                } else {
+                    // Only treat other status codes as errors
+                    const data = await response.json().catch(() => ({ detail: 'Signup failed' }));
+                    showMessage(`❌ ${data.detail || `Signup failed (status: ${response.status})`}`, 'error');
+                }
+            } catch (error) {
+                console.error('Signup error details:', error);
+                console.error('Error name:', error.name);
+                console.error('Error message:', error.message);
+                console.error('Error stack:', error.stack);
+                showMessage(`🔌 Network error: ${error.message}`, 'error');
+            } finally {
+                submitBtn.textContent = 'Create Account';
+                submitBtn.disabled = false;
+            }
+        }
+
+        // Handle login
+        async function handleLogin(event) {
+            event.preventDefault();
+            
+            const form = event.target;
+            const submitBtn = form.querySelector('button[type="submit"]');
+            submitBtn.textContent = 'Signing In...';
+            submitBtn.disabled = true;
+
+            const formData = {
+                email: document.getElementById('loginEmail').value,
+                password: document.getElementById('loginPassword').value
+            };
+
+            try {
+                console.log('Attempting to connect to:', `${API_BASE_URL}/auth/login`);
+                console.log('Sending data:', formData);
+                
+                const response = await fetch(`${API_BASE_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: getDefaultHeaders(),
+                    mode: 'cors',
+                    credentials: 'omit',
+                    body: JSON.stringify(formData)
+                });
+
+                console.log('Response status:', response.status);
+                console.log('Response ok:', response.ok);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log('Response data:', data);
+
+                if (response.ok && data.access_token) {
+                    // Store tokens securely
+                    accessToken = data.access_token;
+                    refreshTokenValue = data.refresh_token;
+                    
+                    localStorage.setItem('accessToken', accessToken);
+                    localStorage.setItem('refreshToken', refreshTokenValue);
+                    
+                    showMessage('🎉 Login successful!', 'success');
+                    getCurrentUser();
+                } else {
+                    showMessage(`❌ ${data.detail || 'Login failed'}`, 'error');
+                }
+            } catch (error) {
+                showMessage(`🔌 Network error: ${error.message}`, 'error');
+            } finally {
+                submitBtn.textContent = 'Sign In';
+                submitBtn.disabled = false;
+            }
+        }
+
+        // Get current user and show dashboard
+        async function getCurrentUser() {
+            if (!accessToken) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/users/me`, {
+                    headers: getAuthHeaders()
+                });
+
+                if (response.ok) {
+                    currentUser = await response.json();
+                    showDashboard(currentUser);
+                } else if (response.status === 401) {
+                    if (refreshTokenValue) {
+                        await refreshToken();
+                    } else {
+                        clearTokens();
+                        showMessage('🔒 Session expired. Please sign in again.', 'error');
+                    }
+                }
+            } catch (error) {
+                console.error('Error getting user profile:', error);
+                clearTokens();
+                showMessage('❌ Error loading profile', 'error');
+            }
+        }
+
+        // Show dashboard
+        function showDashboard(user) {
+            currentUser = user;
+            
+            // Hide auth, show dashboard
+            document.getElementById('authSection').style.display = 'none';
+            document.getElementById('dashboardSection').style.display = 'block';
+            
+            // Populate user info
+            document.getElementById('userId').textContent = user.id;
+            document.getElementById('userEmail').textContent = user.email;
+            document.getElementById('userUsername').textContent = user.username;
+            document.getElementById('userFullName').textContent = `${user.first_name} ${user.last_name}`;
+            document.getElementById('userAdmin').textContent = user.is_admin ? '👑 Yes' : '👤 No';
+            document.getElementById('accessToken').textContent = accessToken;
+        }
+
+        // Test user profile endpoint
+        async function testUserProfile() {
+            await makeApiCall('/users/me', 'GET', null, 'User profile retrieved successfully!');
+        }
+
+        // Get user-specific data
+        async function getUserData() {
+            await makeApiCall('/api/user-data', 'GET', null, 'User data retrieved!');
+        }
+
+        // Create a document
+        async function createDocument() {
+            const documentData = {
+                title: `Test Document ${Date.now()}`,
+                content: `Created by ${currentUser?.username} at ${new Date().toISOString()}`
+            };
+            
+            await makeApiCall('/api/user-document', 'POST', documentData, 'Document created successfully!');
+        }
+
+        // Generic API call helper
+        async function makeApiCall(endpoint, method = 'GET', body = null, successMessage = 'API call successful!') {
+            if (!accessToken) {
+                showMessage('❌ No access token available', 'error');
+                return;
+            }
+
+            try {
+                const options = {
+                    method,
+                    headers: getAuthHeaders()
+                };
+
+                if (body) {
+                    options.body = JSON.stringify(body);
+                }
+
+                const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+                const data = await response.json();
+
+                if (response.ok) {
+                    showMessage(`✅ ${successMessage}`, 'success');
+                    console.log('API Response:', data);
+                } else if (response.status === 401) {
+                    showMessage('🔒 Token expired. Try refreshing token.', 'error');
+                } else {
+                    showMessage(`❌ API Error: ${data.detail || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                showMessage(`🔌 Network error: ${error.message}`, 'error');
+            }
+        }
+
+        // Refresh access token
+        async function refreshToken() {
+            if (!refreshTokenValue) {
+                showMessage('❌ No refresh token available', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+                    method: 'POST',
+                    headers: getDefaultHeaders(),
+                    body: JSON.stringify({ refresh_token: refreshTokenValue })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    accessToken = data.access_token;
+                    refreshTokenValue = data.refresh_token;
+                    
+                    localStorage.setItem('accessToken', accessToken);
+                    localStorage.setItem('refreshToken', refreshTokenValue);
+                    
+                    document.getElementById('accessToken').textContent = accessToken;
+                    showMessage('🔄 Token refreshed successfully!', 'success');
+                } else {
+                    clearTokens();
+                    showMessage(`❌ Token refresh failed: ${data.detail}`, 'error');
+                    showAuthSection();
+                }
+            } catch (error) {
+                clearTokens();
+                showMessage(`🔌 Token refresh error: ${error.message}`, 'error');
+                showAuthSection();
+            }
+        }
+
+        // Logout
+        async function logout() {
+            if (refreshTokenValue) {
+                try {
+                    await fetch(`${API_BASE_URL}/auth/logout`, {
+                        method: 'POST',
+                        headers: getDefaultHeaders(),
+                        body: JSON.stringify({ refresh_token: refreshTokenValue })
+                    });
+                } catch (error) {
+                    console.error('Logout error:', error);
+                }
+            }
+
+            clearTokens();
+            showMessage('👋 Logged out successfully', 'success');
+            showAuthSection();
+        }
+
+        // Logout all devices
+        async function logoutAll() {
+            if (refreshTokenValue) {
+                try {
+                    await fetch(`${API_BASE_URL}/auth/logout-all`, {
+                        method: 'POST',
+                        headers: getDefaultHeaders(),
+                        body: JSON.stringify({ refresh_token: refreshTokenValue })
+                    });
+                } catch (error) {
+                    console.error('Logout all error:', error);
+                }
+            }
+
+            clearTokens();
+            showMessage('🔒 Logged out from all devices', 'success');
+            showAuthSection();
+        }
+
+        // Show auth section
+        function showAuthSection() {
+            document.getElementById('authSection').style.display = 'block';
+            document.getElementById('dashboardSection').style.display = 'none';
+        }
+
+        // Clear tokens
+        function clearTokens() {
+            accessToken = null;
+            refreshTokenValue = null;
+            currentUser = null;
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+        }
+
+        // Auto-refresh token before expiry
+        setInterval(async () => {
+            if (refreshTokenValue && accessToken && currentUser) {
+                console.log('Auto-refreshing token...');
+                await refreshToken();
+            }
+        }, 13 * 60 * 1000); // 13 minutes (token expires in 15)
+
+        // Network testing functions
+        async function testBackendConnection() {
+            try {
+                showMessage('🔍 Testing backend connection...', 'success');
+                console.log('Testing connection to:', `${API_BASE_URL}/health`);
+                
+                const response = await fetch(`${API_BASE_URL}/health`, {
+                    method: 'GET',
+                    headers: getDefaultHeaders(),
+                    mode: 'cors',
+                    credentials: 'omit'
+                });
+
+                console.log('Health check response:', response);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Health check data:', data);
+                    showMessage(`✅ Backend connected! Status: ${data.status}`, 'success');
+                } else {
+                    showMessage(`❌ Backend error: ${response.status} ${response.statusText}`, 'error');
+                }
+            } catch (error) {
+                console.error('Backend connection error:', error);
+                showMessage(`❌ Connection failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function testCORS() {
+            try {
+                showMessage('🔍 Testing CORS configuration...', 'success');
+                console.log('Testing CORS with:', `${API_BASE_URL}/health`);
+                
+                const response = await fetch(`${API_BASE_URL}/health`, {
+                    method: 'GET',
+                    headers: {
+                        ...getDefaultHeaders(),
+                        'Origin': 'http://localhost:3000'
+                    },
+                    mode: 'cors'
+                });
+
+                if (response.ok) {
+                    const corsHeaders = {
+                        'access-control-allow-origin': response.headers.get('access-control-allow-origin'),
+                        'access-control-allow-credentials': response.headers.get('access-control-allow-credentials')
+                    };
+                    console.log('CORS headers:', corsHeaders);
+                    showMessage(`✅ CORS working! Origin: ${corsHeaders['access-control-allow-origin']}`, 'success');
+                } else {
+                    showMessage(`❌ CORS test failed: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                console.error('CORS test error:', error);
+                showMessage(`❌ CORS error: ${error.message}`, 'error');
+            }
+        }
+    </script>
+</body>
+</html>

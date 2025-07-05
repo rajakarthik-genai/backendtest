@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Network Test</title>
+</head>
+<body>
+    <h1>Network Test for MediTwin Backend</h1>
+    <div id="status">Ready to test...</div>
+    <br>
+    <button onclick="runTests()">Run All Tests</button>
+    
+    <div id="results"></div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:8081';
+        
+        async function runTests() {
+            const statusDiv = document.getElementById('status');
+            const resultsDiv = document.getElementById('results');
+            
+            statusDiv.innerHTML = 'Running tests...';
+            resultsDiv.innerHTML = '';
+            
+            // Test 1: Basic connectivity
+            await testBasicConnectivity();
+            
+            // Test 2: CORS test
+            await testCORS();
+            
+            // Test 3: Registration test
+            await testRegistration();
+            
+            // Test 4: Login test
+            await testLogin();
+            
+            statusDiv.innerHTML = 'Tests completed!';
+        }
+        
+        async function testBasicConnectivity() {
+            addResult('Testing basic connectivity...');
+            try {
+                const response = await fetch(`${API_BASE_URL}/health`);
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult(`✅ Health check: ${JSON.stringify(data)}`);
+                } else {
+                    addResult(`❌ Health check failed: ${response.status}`);
+                }
+            } catch (error) {
+                addResult(`❌ Health check error: ${error.message}`);
+            }
+        }
+        
+        async function testCORS() {
+            addResult('Testing CORS...');
+            try {
+                const response = await fetch(`${API_BASE_URL}/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Origin': 'http://localhost:3000'
+                    },
+                    mode: 'cors'
+                });
+                
+                if (response.ok) {
+                    const allowOrigin = response.headers.get('Access-Control-Allow-Origin');
+                    addResult(`✅ CORS: Allow-Origin = ${allowOrigin}`);
+                } else {
+                    addResult(`❌ CORS failed: ${response.status}`);
+                }
+            } catch (error) {
+                addResult(`❌ CORS error: ${error.message}`);
+            }
+        }
+        
+        async function testRegistration() {
+            addResult('Testing registration...');
+            try {
+                const testUser = {
+                    email: `test${Date.now()}@example.com`,
+                    username: `testuser${Date.now()}`,
+                    first_name: 'Test',
+                    last_name: 'User',
+                    password: 'TestPass123'
+                };
+                
+                const response = await fetch(`${API_BASE_URL}/auth/signup`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    mode: 'cors',
+                    body: JSON.stringify(testUser)
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult(`✅ Registration successful: User ID ${data.id}`);
+                    window.testUser = testUser; // Save for login test
+                } else {
+                    const errorData = await response.json();
+                    addResult(`❌ Registration failed: ${errorData.detail}`);
+                }
+            } catch (error) {
+                addResult(`❌ Registration error: ${error.message}`);
+            }
+        }
+        
+        async function testLogin() {
+            addResult('Testing login...');
+            if (!window.testUser) {
+                addResult('❌ No test user available for login test');
+                return;
+            }
+            
+            try {
+                const loginData = {
+                    email: window.testUser.email,
+                    password: window.testUser.password
+                };
+                
+                const response = await fetch(`${API_BASE_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    mode: 'cors',
+                    body: JSON.stringify(loginData)
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult(`✅ Login successful: Got access token`);
+                    addResult(`Token preview: ${data.access_token.substring(0, 50)}...`);
+                } else {
+                    const errorData = await response.json();
+                    addResult(`❌ Login failed: ${errorData.detail}`);
+                }
+            } catch (error) {
+                addResult(`❌ Login error: ${error.message}`);
+            }
+        }
+        
+        function addResult(message) {
+            const resultsDiv = document.getElementById('results');
+            const p = document.createElement('p');
+            p.innerHTML = message;
+            resultsDiv.appendChild(p);
+            console.log(message);
+        }
+    </script>
+</body>
+</html>

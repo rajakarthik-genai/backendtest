@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Connection Test</title>
+</head>
+<body>
+    <h1>Backend Connection Test</h1>
+    <button onclick="testConnection()">Test Backend Connection</button>
+    <div id="result"></div>
+
+    <script>
+        async function testConnection() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Testing...';
+
+            try {
+                console.log('Testing connection to http://localhost:8081/health');
+                
+                const response = await fetch('http://localhost:8081/health', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    mode: 'cors'
+                });
+
+                console.log('Response status:', response.status);
+                console.log('Response headers:', response.headers);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.innerHTML = `✅ Success: ${JSON.stringify(data)}`;
+                } else {
+                    resultDiv.innerHTML = `❌ HTTP Error: ${response.status} ${response.statusText}`;
+                }
+            } catch (error) {
+                console.error('Fetch error:', error);
+                resultDiv.innerHTML = `❌ Network Error: ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>
