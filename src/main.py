@@ -17,7 +17,7 @@ from src.db.milvus_db import init_milvus
 from src.db.redis_db import init_redis
 from src.auth.middleware import JWTAuthMiddleware
 from src.middleware.request_logging import RequestLoggingMiddleware
-from src.middleware.request_logging import RequestLoggingMiddleware
+from src.middleware.user_initialization import UserInitializationMiddleware
 
 
 async def _startup():
@@ -95,6 +95,9 @@ app.add_middleware(RequestLoggingMiddleware, log_requests=True)
 # For development/testing, you can use require_auth=False
 jwt_require_auth = getattr(settings, 'jwt_require_auth', False)
 app.add_middleware(JWTAuthMiddleware, require_auth=jwt_require_auth)
+
+# Add user initialization middleware (after auth middleware)
+app.add_middleware(UserInitializationMiddleware)
 
 # Attach API routers
 attach_routers(app)

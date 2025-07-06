@@ -9,6 +9,7 @@ Features:
 """
 
 import os
+import json
 import tempfile
 from datetime import datetime
 from typing import Dict, List, Any, Optional
@@ -159,9 +160,141 @@ class IngestionAgent:
             }
     
     async def _extract_medical_entities(self, text: str) -> List[Dict[str, Any]]:
-        """Extract medical entities from text using NLP."""
+        """Extract medical entities from text using LLM-powered structured extraction."""
         try:
-            # Simple keyword-based extraction for demo
+            from openai import AsyncOpenAI
+            from src.config.settings import settings
+            from src.config.body_parts import get_default_body_parts
+            
+            # Initialize OpenAI client
+            client = AsyncOpenAI(api_key=settings.openai_api_key)
+            
+            # Get available body parts for context
+            body_parts = get_default_body_parts()
+            
+            # Define the JSON schema for structured output
+            extraction_schema = {
+                "type": "object",
+                "properties": {
+                    "medical_events": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "body_part": {
+                                    "type": "string",
+                                    "description": "The body part affected (must match one of the predefined body parts)",
+                                    "enum": body_parts
+                                },
+                                "condition": {
+                                    "type": "string",
+                                    "description": "The medical condition, finding, or diagnosis"
+                                },
+                                "severity": {
+                                    "type": "string",
+                                    "description": "Severity level of the condition",
+                                    "enum": ["critical", "severe", "moderate", "mild", "normal"]
+                                },
+                                "date": {
+                                    "type": "string",
+                                    "description": "Date of the event if mentioned (ISO format), or empty string if not specified"
+                                },
+                                "confidence": {
+                                    "type": "number",
+                                    "description": "Confidence in the extraction (0.0 to 1.0)",
+                                    "minimum": 0.0,
+                                    "maximum": 1.0
+                                },
+                                "description": {
+                                    "type": "string",
+                                    "description": "Additional context or details about the finding"
+                                }
+                            },
+                            "required": ["body_part", "condition", "severity", "confidence"]
+                        }
+                    }
+                },
+                "required": ["medical_events"]
+            }
+            
+            # Create the extraction prompt
+            system_prompt = """You are a medical information extraction assistant. Your task is to extract structured medical events from patient documents.
+
+INSTRUCTIONS:
+1. Extract only medical events that are explicitly mentioned in the document
+2. For each event, identify the specific body part affected from the provided list
+3. Determine the medical condition or finding
+4. Assess the severity level based on the clinical context
+5. Include dates if mentioned in the document
+6. Provide a confidence score based on how clearly the information is stated
+7. Do not hallucinate or infer information not present in the text
+8. If a condition affects multiple body parts, create separate events for each
+
+SEVERITY GUIDELINES:
+- critical: Life-threatening conditions requiring immediate intervention
+- severe: Serious conditions requiring urgent medical attention
+- moderate: Conditions that need medical management but not urgent
+- mild: Minor conditions or early-stage findings
+- normal: Normal findings or resolved conditions
+
+BODY PARTS AVAILABLE:
+""" + ", ".join(body_parts)
+            
+            user_prompt = f"""Extract medical events from this document:
+
+{text}
+
+Return a JSON object with an array of medical events following the specified schema."""
+            
+            # Call OpenAI with structured output
+            response = await client.chat.completions.create(
+                model="gpt-4o-mini",  # Use gpt-4o-mini for cost efficiency
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "medical_extraction",
+                        "schema": extraction_schema,
+                        "strict": True
+                    }
+                },
+                temperature=0.1,  # Low temperature for consistent extraction
+                max_tokens=2000
+            )
+            
+            # Parse the JSON response
+            import json
+            result = json.loads(response.choices[0].message.content)
+            medical_events = result.get("medical_events", [])
+            
+            # Convert to the expected format
+            entities = []
+            for event in medical_events:
+                entities.append({
+                    "type": "medical_event",
+                    "body_part": event.get("body_part"),
+                    "condition": event.get("condition"),
+                    "severity": event.get("severity"),
+                    "date": event.get("date", ""),
+                    "confidence": event.get("confidence", 0.8),
+                    "description": event.get("description", ""),
+                    "extraction_method": "llm_structured_output"
+                })
+            
+            logger.info(f"LLM extracted {len(entities)} medical entities from document")
+            return entities
+            
+        except Exception as e:
+            logger.error(f"LLM entity extraction failed: {e}")
+            # Fallback to simple keyword matching if LLM fails
+            return await self._fallback_keyword_extraction(text)
+    
+    async def _fallback_keyword_extraction(self, text: str) -> List[Dict[str, Any]]:
+        """Fallback keyword-based extraction if LLM fails."""
+        try:
             entities = []
             
             medical_keywords = {
@@ -180,14 +313,15 @@ class IngestionAgent:
                             "type": category,
                             "text": keyword,
                             "category": category,
-                            "confidence": 0.8,
-                            "extraction_method": "keyword_matching"
+                            "confidence": 0.6,  # Lower confidence for fallback
+                            "extraction_method": "keyword_matching_fallback"
                         })
             
+            logger.warning(f"Used fallback keyword extraction, found {len(entities)} entities")
             return entities
             
         except Exception as e:
-            logger.error(f"Entity extraction failed: {e}")
+            logger.error(f"Fallback extraction also failed: {e}")
             return []
     
     async def _store_in_mongodb(
@@ -228,29 +362,160 @@ class IngestionAgent:
         document_id: str,
         entities: List[Dict[str, Any]]
     ):
-        """Create knowledge graph relationships in Neo4j."""
+        """Create knowledge graph relationships in Neo4j with enhanced LLM-extracted data."""
         try:
             neo4j_client = get_graph()
             
-            # Create patient node if not exists
-            neo4j_client.create_patient_node(user_id, {})
+            # Ensure user graph is initialized
+            neo4j_client.ensure_user_initialized(user_id)
             
-            # Create events for medical entities
+            # Process each extracted entity
             for entity in entities:
-                if entity["type"] in ["conditions", "symptoms"]:
-                    event_data = {
-                        "title": entity["text"],
-                        "description": f"Mentioned in document {document_id}",
-                        "event_type": "condition",
-                        "timestamp": datetime.utcnow(),
-                        "source": "document_processing"
-                    }
-                    
-                    neo4j_client.create_medical_event(user_id, event_data)
+                # Handle LLM-extracted medical events
+                if entity.get("extraction_method") == "llm_structured_output":
+                    await self._create_llm_medical_event(neo4j_client, user_id, document_id, entity)
+                else:
+                    # Handle fallback keyword-extracted entities
+                    await self._create_fallback_medical_event(neo4j_client, user_id, document_id, entity)
+            
+            # Auto-update body part severities after processing
+            neo4j_client.auto_update_body_part_severities(user_id)
+            
+            logger.info(f"Neo4j storage completed for document {document_id}: {len(entities)} entities processed")
             
         except Exception as e:
             logger.error(f"Neo4j storage failed: {e}")
             # Don't raise - Neo4j storage is not critical
+    
+    async def _create_llm_medical_event(
+        self,
+        neo4j_client,
+        user_id: str,
+        document_id: str,
+        entity: Dict[str, Any]
+    ):
+        """Create a medical event from LLM-extracted data."""
+        try:
+            # Parse date if provided
+            event_date = datetime.utcnow()
+            if entity.get("date"):
+                try:
+                    from dateutil.parser import parse
+                    event_date = parse(entity["date"])
+                except:
+                    logger.warning(f"Could not parse date: {entity.get('date')}")
+            
+            # Create comprehensive event data
+            event_data = {
+                "title": entity.get("condition", "Medical Finding"),
+                "description": f"{entity.get('description', '')} (Source: Document {document_id})",
+                "event_type": "medical_condition",
+                "timestamp": event_date,
+                "source": "llm_extraction",
+                "severity": entity.get("severity", "mild"),
+                "confidence": entity.get("confidence", 0.8),
+                "body_part": entity.get("body_part"),
+                "extraction_method": "llm_structured_output"
+            }
+            
+            # Create the medical event in Neo4j
+            event_id = neo4j_client.create_medical_event(
+                user_id=user_id,
+                event_data=event_data,
+                body_parts=[entity.get("body_part")] if entity.get("body_part") else []
+            )
+            
+            logger.debug(f"Created LLM medical event: {event_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to create LLM medical event: {e}")
+    
+    async def _create_fallback_medical_event(
+        self,
+        neo4j_client,
+        user_id: str,
+        document_id: str,
+        entity: Dict[str, Any]
+    ):
+        """Create a medical event from fallback keyword extraction."""
+        try:
+            # Determine severity using keyword rules
+            severity = self._determine_entity_severity(entity)
+            
+            # Create event data
+            event_data = {
+                "title": entity.get("text", "Medical Finding"),
+                "description": f"Keyword-extracted from document {document_id}. Category: {entity.get('category', 'unknown')}",
+                "event_type": entity.get("category", "general"),
+                "timestamp": datetime.utcnow(),
+                "source": "keyword_extraction",
+                "severity": severity,
+                "confidence": entity.get("confidence", 0.6),
+                "extraction_method": "keyword_matching_fallback"
+            }
+            
+            # Try to map to body parts if it's a body part entity
+            body_parts = []
+            if entity.get("category") == "body_parts":
+                # Use the body part mapping from config
+                from src.config.body_parts import identify_body_parts_from_text
+                body_parts = identify_body_parts_from_text(entity.get("text", ""))
+            
+            # Create the medical event in Neo4j
+            event_id = neo4j_client.create_medical_event(
+                user_id=user_id,
+                event_data=event_data,
+                body_parts=body_parts
+            )
+            
+            logger.debug(f"Created fallback medical event: {event_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to create fallback medical event: {e}")
+
+    def _determine_entity_severity(self, entity: Dict[str, Any]) -> str:
+        """
+        Determine severity level for medical entities.
+        For LLM-extracted entities, use the provided severity.
+        For fallback entities, use keyword-based rules.
+        """
+        # If LLM provided severity, use it
+        if entity.get("extraction_method") == "llm_structured_output":
+            return entity.get("severity", "mild")
+        
+        # Fallback to keyword-based severity determination
+        text = entity.get("text", "").lower()
+        entity_type = entity.get("type", "")
+        
+        # Critical keywords
+        critical_keywords = [
+            "cancer", "tumor", "malignant", "metastasis", "stroke", "heart attack",
+            "cardiac arrest", "sepsis", "hemorrhage", "fracture", "emergency"
+        ]
+        
+        # Severe keywords
+        severe_keywords = [
+            "acute", "severe", "chronic", "infection", "pneumonia", "diabetes",
+            "hypertension", "surgery", "operation", "hospitalization"
+        ]
+        
+        # Moderate keywords
+        moderate_keywords = [
+            "moderate", "mild", "inflammation", "pain", "symptom", "medication",
+            "treatment", "therapy", "monitoring"
+        ]
+        
+        # Check for severity indicators
+        if any(keyword in text for keyword in critical_keywords):
+            return "critical"
+        elif any(keyword in text for keyword in severe_keywords):
+            return "severe"
+        elif any(keyword in text for keyword in moderate_keywords):
+            return "moderate"
+        elif entity_type in ["medications", "procedures"]:
+            return "mild"  # Medications and procedures are typically mild unless specified
+        else:
+            return "mild"  # Default to mild for unspecified conditions
     
     async def _store_embeddings(
         self,

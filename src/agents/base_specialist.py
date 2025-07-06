@@ -503,9 +503,25 @@ class BaseSpecialist(ABC):
         """Query the knowledge graph for patient information."""
         try:
             graph_db = get_graph()
-            # This would need to be implemented in the Neo4j client
-            result = {"message": "Knowledge graph query not fully implemented"}
-            return json.dumps(result)
+            
+            # Ensure user is initialized
+            graph_db.ensure_user_initialized(user_id)
+            
+            # Get body part severities
+            severities = graph_db.get_body_part_severities(user_id)
+            
+            # Get recent events for context
+            timeline = graph_db.get_patient_timeline(user_id, limit=10)
+            
+            # Build context response
+            context = {
+                "body_part_severities": severities,
+                "recent_events": timeline,
+                "query_processed": True
+            }
+            
+            return json.dumps(context)
+            
         except Exception as e:
             logger.error(f"Knowledge graph query failed: {e}")
             return f"Knowledge graph unavailable: {str(e)}"
