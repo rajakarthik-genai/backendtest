@@ -249,6 +249,163 @@
             opacity: 0.6;
             pointer-events: none;
         }
+
+        /* Medical Interface Styles */
+        .chat-interface, .upload-interface, .timeline-interface, .consultation-interface {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            margin-top: 20px;
+            display: none;
+        }
+
+        .chat-header, .upload-header, .timeline-header, .consultation-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .chat-messages {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background: #f8f9fa;
+        }
+
+        .chat-message {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 10px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .chat-message.user {
+            background: #e3f2fd;
+            margin-left: 20px;
+        }
+
+        .chat-message.ai {
+            background: #f1f8e9;
+            margin-right: 20px;
+        }
+
+        .chat-message.system {
+            background: #fff3e0;
+            font-style: italic;
+        }
+
+        .chat-message.error {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .chat-input {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 25px;
+            font-size: 14px;
+        }
+
+        .upload-area {
+            border: 2px dashed #ddd;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            background: #f8f9fa;
+            margin-bottom: 20px;
+        }
+
+        .upload-area:hover {
+            border-color: #667eea;
+            background: #f0f8ff;
+        }
+
+        .upload-status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+        }
+
+        .timeline-event {
+            background: white;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 0 10px 10px 0;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .event-date {
+            font-weight: bold;
+            color: #667eea;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .event-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .event-description {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .consultation-form {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .consultation-form .form-group {
+            margin-bottom: 15px;
+        }
+
+        .consultation-form label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .consultation-form textarea {
+            width: 100%;
+            min-height: 100px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-family: inherit;
+            resize: vertical;
+        }
+
+        .specialist-opinion {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .specialist-opinion h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
@@ -354,38 +511,39 @@
                 </div>
 
                 <div class="api-demo">
-                    <h4>🚀 API Testing</h4>
-                    <p>Test the protected endpoints. All requests use JWT for authentication and automatically extract user_id from the token:</p>
+                    <h4>🏥 Medical Services</h4>
+                    <p>Access your personalized medical AI assistant and health management tools:</p>
                     
                     <div class="btn-grid">
-                        <button class="btn btn-success" onclick="testUserProfile()">Get Profile</button>
-                        <button class="btn btn-success" onclick="getUserData()">Get My Data</button>
-                        <button class="btn btn-success" onclick="createDocument()">Create Document</button>
-                        <button class="btn btn-warning" onclick="refreshToken()">Refresh Token</button>
+                        <button class="btn btn-primary" onclick="startMedicalChat()">💬 Start Medical Chat</button>
+                        <button class="btn btn-primary" onclick="showUploadForm()">📄 Upload Medical Document</button>
+                        <button class="btn btn-primary" onclick="showTimeline()">📅 Medical Timeline</button>
+                        <button class="btn btn-primary" onclick="showExpertConsultation()">👨‍⚕️ Expert Consultation</button>
                     </div>
                 </div>
 
                 <div class="api-demo" style="background: #f0f8ff; border-color: #b8daff;">
-                    <h4>🔧 Network Testing</h4>
-                    <p>Debug network connectivity issues:</p>
+                    <h4>� Account Management</h4>
+                    <p>Manage your account and session:</p>
                     
                     <div class="btn-grid">
-                        <button class="btn btn-success" onclick="testBackendConnection()">Test Backend</button>
-                        <button class="btn btn-success" onclick="testCORS()">Test CORS</button>
+                        <button class="btn btn-success" onclick="getUserData()">View My Profile</button>
+                        <button class="btn btn-warning" onclick="refreshToken()">Refresh Session</button>
                     </div>
                 </div>
 
                 <div class="btn-grid">
                     <button class="btn btn-secondary" onclick="logout()">Logout</button>
-                    <button class="btn btn-secondary" onclick="logoutAll()">Logout All</button>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        // Configuration - Using local backend for testing
-        const API_BASE_URL = 'http://localhost:8081';
+        // Configuration - Using ngrok URLs for testing
+        const AUTH_API_BASE_URL = 'https://lenient-sunny-grouse.ngrok-free.app';
+        const BACKEND_API_BASE_URL = 'https://mackerel-liberal-loosely.ngrok-free.app';
+        const API_BASE_URL = AUTH_API_BASE_URL;  // For backward compatibility
         
         // Default headers for all API calls
         const getDefaultHeaders = () => ({
@@ -447,6 +605,266 @@
             setTimeout(() => {
                 messageDiv.style.display = 'none';
             }, 5000);
+        }
+
+        // Show medical chat interface
+        function showChatInterface() {
+            // Hide dashboard, show chat interface
+            document.getElementById('dashboardSection').style.display = 'none';
+            
+            // Create chat interface if it doesn't exist
+            if (!document.getElementById('chatInterface')) {
+                const chatHTML = `
+                    <div id="chatInterface" class="chat-interface">
+                        <div class="chat-header">
+                            <h3>🏥 MediTwin Medical Chat</h3>
+                            <button onclick="closeChatInterface()" class="btn btn-secondary">← Back to Dashboard</button>
+                        </div>
+                        <div class="chat-messages" id="chatMessages"></div>
+                        <div class="chat-input">
+                            <input type="text" id="chatInput" placeholder="Describe your symptoms or ask a medical question..." />
+                            <button onclick="sendMessage()" class="btn btn-primary">Send</button>
+                        </div>
+                    </div>
+                `;
+                document.querySelector('.container').insertAdjacentHTML('beforeend', chatHTML);
+            }
+            
+            document.getElementById('chatInterface').style.display = 'block';
+            document.getElementById('chatInput').focus();
+            
+            // Add Enter key listener for chat input
+            document.getElementById('chatInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+        }
+
+        // Close chat interface
+        function closeChatInterface() {
+            document.getElementById('chatInterface').style.display = 'none';
+            document.getElementById('dashboardSection').style.display = 'block';
+        }
+
+        // Send message in chat
+        async function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            // Add user message to chat
+            addMessageToChat('user', message);
+            input.value = '';
+            
+            // Show loading
+            addMessageToChat('system', 'MediTwin is analyzing your message...');
+            
+            try {
+                const response = await sendChatMessage(message);
+                // Remove loading message
+                removeLastSystemMessage();
+                // Add AI response
+                addMessageToChat('ai', response);
+            } catch (error) {
+                removeLastSystemMessage();
+                addMessageToChat('error', 'Sorry, I encountered an error. Please try again.');
+            }
+        }
+
+        // Add message to chat interface
+        function addMessageToChat(sender, message) {
+            const chatMessages = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message ${sender}`;
+            
+            const icon = sender === 'user' ? '👤' : sender === 'ai' ? '🤖' : sender === 'error' ? '❌' : '⏳';
+            messageDiv.innerHTML = `<span class="message-icon">${icon}</span><span class="message-text">${message}</span>`;
+            
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Remove last system message
+        function removeLastSystemMessage() {
+            const chatMessages = document.getElementById('chatMessages');
+            const systemMessages = chatMessages.querySelectorAll('.chat-message.system');
+            if (systemMessages.length > 0) {
+                systemMessages[systemMessages.length - 1].remove();
+            }
+        }
+
+        // Show upload form
+        function showUploadForm() {
+            // Create upload interface
+            const uploadHTML = `
+                <div id="uploadInterface" class="upload-interface">
+                    <div class="upload-header">
+                        <h3>📄 Upload Medical Document</h3>
+                        <button onclick="closeUploadInterface()" class="btn btn-secondary">← Back to Dashboard</button>
+                    </div>
+                    <div class="upload-content">
+                        <div class="upload-area" id="uploadArea">
+                            <p>📁 Drag & drop your medical document here or click to browse</p>
+                            <input type="file" id="fileInput" accept=".pdf,.jpg,.jpeg,.png,.txt,.doc,.docx" style="display: none;" />
+                            <button onclick="document.getElementById('fileInput').click()" class="btn btn-primary">Choose File</button>
+                        </div>
+                        <div id="uploadStatus" class="upload-status"></div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('dashboardSection').style.display = 'none';
+            document.querySelector('.container').insertAdjacentHTML('beforeend', uploadHTML);
+            
+            // Add file input event listener
+            document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+        }
+
+        // Close upload interface
+        function closeUploadInterface() {
+            document.getElementById('uploadInterface').remove();
+            document.getElementById('dashboardSection').style.display = 'block';
+        }
+
+        // Handle file upload
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const statusDiv = document.getElementById('uploadStatus');
+            statusDiv.innerHTML = `<p>📤 Uploading ${file.name}...</p>`;
+            
+            try {
+                const result = await uploadMedicalDocument(file);
+                statusDiv.innerHTML = `<p>✅ Document uploaded successfully! Document ID: ${result.document_id}</p>`;
+            } catch (error) {
+                statusDiv.innerHTML = `<p>❌ Upload failed: ${error.message}</p>`;
+            }
+        }
+
+        // Show timeline
+        async function showTimeline() {
+            document.getElementById('dashboardSection').style.display = 'none';
+            
+            const timelineHTML = `
+                <div id="timelineInterface" class="timeline-interface">
+                    <div class="timeline-header">
+                        <h3>📅 Medical Timeline</h3>
+                        <button onclick="closeTimelineInterface()" class="btn btn-secondary">← Back to Dashboard</button>
+                    </div>
+                    <div class="timeline-content" id="timelineContent">
+                        <p>📊 Loading your medical timeline...</p>
+                    </div>
+                </div>
+            `;
+            
+            document.querySelector('.container').insertAdjacentHTML('beforeend', timelineHTML);
+            
+            try {
+                const timeline = await getMedicalTimeline();
+                displayTimeline(timeline);
+            } catch (error) {
+                document.getElementById('timelineContent').innerHTML = `<p>❌ Error loading timeline: ${error.message}</p>`;
+            }
+        }
+
+        // Display timeline
+        function displayTimeline(timeline) {
+            const content = document.getElementById('timelineContent');
+            if (timeline.events && timeline.events.length > 0) {
+                const eventsHTML = timeline.events.map(event => `
+                    <div class="timeline-event">
+                        <div class="event-date">${new Date(event.timestamp).toLocaleDateString()}</div>
+                        <div class="event-title">${event.title || event.event_type}</div>
+                        <div class="event-description">${event.description || 'No description'}</div>
+                    </div>
+                `).join('');
+                content.innerHTML = eventsHTML;
+            } else {
+                content.innerHTML = '<p>📋 No medical events found in your timeline.</p>';
+            }
+        }
+
+        // Close timeline interface
+        function closeTimelineInterface() {
+            document.getElementById('timelineInterface').remove();
+            document.getElementById('dashboardSection').style.display = 'block';
+        }
+
+        // Show expert consultation
+        function showExpertConsultation() {
+            document.getElementById('dashboardSection').style.display = 'none';
+            
+            const consultationHTML = `
+                <div id="consultationInterface" class="consultation-interface">
+                    <div class="consultation-header">
+                        <h3>👨‍⚕️ Expert Medical Consultation</h3>
+                        <button onclick="closeConsultationInterface()" class="btn btn-secondary">← Back to Dashboard</button>
+                    </div>
+                    <div class="consultation-content">
+                        <div class="consultation-form">
+                            <div class="form-group">
+                                <label>Symptoms:</label>
+                                <textarea id="symptomsInput" placeholder="Describe your symptoms in detail..."></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>Medical History:</label>
+                                <textarea id="historyInput" placeholder="Any relevant medical history..."></textarea>
+                            </div>
+                            <button onclick="requestExpertOpinion()" class="btn btn-primary">Get Expert Opinion</button>
+                        </div>
+                        <div id="consultationResults" class="consultation-results"></div>
+                    </div>
+                </div>
+            `;
+            
+            document.querySelector('.container').insertAdjacentHTML('beforeend', consultationHTML);
+        }
+
+        // Request expert opinion
+        async function requestExpertOpinion() {
+            const symptoms = document.getElementById('symptomsInput').value.trim();
+            const history = document.getElementById('historyInput').value.trim();
+            
+            if (!symptoms) {
+                showMessage('Please describe your symptoms', 'error');
+                return;
+            }
+            
+            const resultsDiv = document.getElementById('consultationResults');
+            resultsDiv.innerHTML = '<p>🔄 Consulting with medical experts...</p>';
+            
+            try {
+                const opinion = await getExpertOpinion(symptoms, history);
+                displayExpertOpinion(opinion);
+            } catch (error) {
+                resultsDiv.innerHTML = `<p>❌ Error getting expert opinion: ${error.message}</p>`;
+            }
+        }
+
+        // Display expert opinion
+        function displayExpertOpinion(opinion) {
+            const resultsDiv = document.getElementById('consultationResults');
+            
+            if (opinion.specialist_opinions && opinion.specialist_opinions.length > 0) {
+                const opinionsHTML = opinion.specialist_opinions.map(spec => `
+                    <div class="specialist-opinion">
+                        <h4>👨‍⚕️ ${spec.specialist}</h4>
+                        <p>${spec.opinion}</p>
+                    </div>
+                `).join('');
+                resultsDiv.innerHTML = opinionsHTML;
+            } else {
+                resultsDiv.innerHTML = '<p>📋 No specialist opinions available.</p>';
+            }
+        }
+
+        // Close consultation interface
+        function closeConsultationInterface() {
+            document.getElementById('consultationInterface').remove();
+            document.getElementById('dashboardSection').style.display = 'block';
         }
 
         // Handle signup
@@ -811,6 +1229,153 @@
             } catch (error) {
                 console.error('CORS test error:', error);
                 showMessage(`❌ CORS error: ${error.message}`, 'error');
+            }
+        }
+
+        // ==== PRODUCTION MEDITWIN FUNCTIONS ====
+
+        // Start a medical consultation chat
+        async function startMedicalChat() {
+            if (!accessToken) {
+                showMessage('❌ Please login first to access medical chat', 'error');
+                return;
+            }
+
+            try {
+                showMessage('🔄 Starting medical consultation...', 'info');
+                
+                // Show chat interface
+                showChatInterface();
+                
+            } catch (error) {
+                console.error('Error starting medical chat:', error);
+                showMessage('❌ Error starting medical chat', 'error');
+            }
+        }
+
+        // Send chat message to MediTwin backend
+        async function sendChatMessage(message) {
+            if (!accessToken || !currentUser) {
+                showMessage('❌ Please login first', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${BACKEND_API_BASE_URL}/chat/message`, {
+                    method: 'POST',
+                    headers: {
+                        ...getDefaultHeaders(),
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        user_id: currentUser.id.toString(),
+                        session_id: `session_${Date.now()}`
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.response;
+                } else {
+                    throw new Error(`Chat failed: ${response.status}`);
+                }
+            } catch (error) {
+                console.error('Chat error:', error);
+                throw error;
+            }
+        }
+
+        // Get expert medical opinion
+        async function getExpertOpinion(symptoms, medicalHistory) {
+            if (!accessToken || !currentUser) {
+                showMessage('❌ Please login first', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${BACKEND_API_BASE_URL}/expert/opinion`, {
+                    method: 'POST',
+                    headers: {
+                        ...getDefaultHeaders(),
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify({
+                        symptoms: symptoms,
+                        medical_history: medicalHistory,
+                        user_id: currentUser.id.toString()
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    return data;
+                } else {
+                    throw new Error(`Expert opinion failed: ${response.status}`);
+                }
+            } catch (error) {
+                console.error('Expert opinion error:', error);
+                throw error;
+            }
+        }
+
+        // Upload medical document
+        async function uploadMedicalDocument(file) {
+            if (!accessToken || !currentUser) {
+                showMessage('❌ Please login first', 'error');
+                return;
+            }
+
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('user_id', currentUser.id.toString());
+
+                const response = await fetch(`${BACKEND_API_BASE_URL}/upload/document`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'ngrok-skip-browser-warning': 'true'
+                    },
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    return data;
+                } else {
+                    throw new Error(`Upload failed: ${response.status}`);
+                }
+            } catch (error) {
+                console.error('Upload error:', error);
+                throw error;
+            }
+        }
+
+        // Get medical timeline
+        async function getMedicalTimeline() {
+            if (!accessToken || !currentUser) {
+                showMessage('❌ Please login first', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${BACKEND_API_BASE_URL}/timeline/?user_id=${currentUser.id}`, {
+                    headers: {
+                        ...getDefaultHeaders(),
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    return data;
+                } else {
+                    throw new Error(`Timeline failed: ${response.status}`);
+                }
+            } catch (error) {
+                console.error('Timeline error:', error);
+                throw error;
             }
         }
     </script>
