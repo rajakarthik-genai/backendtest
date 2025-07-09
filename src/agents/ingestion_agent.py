@@ -10,6 +10,7 @@ Features:
 
 import os
 import json
+import uuid
 import tempfile
 from datetime import datetime
 from typing import Dict, List, Any, Optional
@@ -74,6 +75,9 @@ class IngestionAgent:
             # Step 2: Parse medical entities
             entities = await self._extract_medical_entities(extracted_text)
             
+            # Step 2.5: Extract lifestyle factors for long-term memory
+            await self._extract_and_store_lifestyle_factors(user_id, extracted_text, entities)
+            
             # Step 3: Store in MongoDB
             mongo_result = await self._store_in_mongodb(
                 user_id, document_id, extracted_text, entities, metadata
@@ -83,7 +87,7 @@ class IngestionAgent:
             await self._store_in_neo4j(user_id, document_id, entities)
             
             # Step 5: Generate and store embeddings
-            await self._store_embeddings(user_id, document_id, extracted_text)
+            await self._store_embeddings(user_id, document_id, extracted_text, entities)
             
             log_user_action(
                 user_id,
@@ -195,22 +199,32 @@ class IngestionAgent:
                                     "description": "Severity level of the condition",
                                     "enum": ["critical", "severe", "moderate", "mild", "normal"]
                                 },
+                                "symptoms": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "List of symptoms mentioned"
+                                },
+                                "treatments": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "List of treatments mentioned"
+                                },
                                 "date": {
                                     "type": "string",
                                     "description": "Date of the event if mentioned (ISO format), or empty string if not specified"
+                                },
+                                "summary": {
+                                    "type": "string",
+                                    "description": "Concise narrative summary of the medical event (1-2 sentences)"
                                 },
                                 "confidence": {
                                     "type": "number",
                                     "description": "Confidence in the extraction (0.0 to 1.0)",
                                     "minimum": 0.0,
                                     "maximum": 1.0
-                                },
-                                "description": {
-                                    "type": "string",
-                                    "description": "Additional context or details about the finding"
                                 }
                             },
-                            "required": ["body_part", "condition", "severity", "confidence"]
+                            "required": ["body_part", "condition", "severity", "symptoms", "treatments", "summary", "confidence"]
                         }
                     }
                 },
@@ -225,10 +239,12 @@ INSTRUCTIONS:
 2. For each event, identify the specific body part affected from the provided list
 3. Determine the medical condition or finding
 4. Assess the severity level based on the clinical context
-5. Include dates if mentioned in the document
-6. Provide a confidence score based on how clearly the information is stated
-7. Do not hallucinate or infer information not present in the text
-8. If a condition affects multiple body parts, create separate events for each
+5. Extract symptoms and treatments mentioned
+6. Include dates if mentioned in the document
+7. Generate a concise narrative summary for each event
+8. Provide a confidence score based on how clearly the information is stated
+9. Do not hallucinate or infer information not present in the text
+10. If a condition affects multiple body parts, create separate events for each
 
 SEVERITY GUIDELINES:
 - critical: Life-threatening conditions requiring immediate intervention
@@ -236,6 +252,16 @@ SEVERITY GUIDELINES:
 - moderate: Conditions that need medical management but not urgent
 - mild: Minor conditions or early-stage findings
 - normal: Normal findings or resolved conditions
+
+SYMPTOMS AND TREATMENTS:
+- Extract specific symptoms mentioned (e.g., "chest pain", "shortness of breath")
+- Extract specific treatments mentioned (e.g., "aspirin", "physical therapy")
+- Use standardized medical terminology when possible
+
+SUMMARY GENERATION:
+- Create a concise 1-2 sentence summary for each event
+- Include the key medical finding, body part, and severity
+- Make it suitable for timeline display and LLM context
 
 BODY PARTS AVAILABLE:
 """ + ", ".join(body_parts)
@@ -246,42 +272,63 @@ BODY PARTS AVAILABLE:
 
 Return a JSON object with an array of medical events following the specified schema."""
             
-            # Call OpenAI with structured output
+            # Call OpenAI with JSON mode (compatible with gpt-3.5-turbo)
             response = await client.chat.completions.create(
-                model="gpt-4o-mini",  # Use gpt-4o-mini for cost efficiency
+                model=settings.openai_model_chat,  # Use configured model
                 messages=[
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": system_prompt + "\n\nIMPORTANT: You must respond with valid JSON only, following the exact schema described above."},
                     {"role": "user", "content": user_prompt}
                 ],
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "medical_extraction",
-                        "schema": extraction_schema,
-                        "strict": True
-                    }
-                },
+                response_format={"type": "json_object"},  # Use json_object instead of json_schema for gpt-3.5-turbo
                 temperature=0.1,  # Low temperature for consistent extraction
                 max_tokens=2000
             )
             
-            # Parse the JSON response
+            # Parse the JSON response with error handling
             import json
-            result = json.loads(response.choices[0].message.content)
-            medical_events = result.get("medical_events", [])
+            try:
+                response_content = response.choices[0].message.content.strip()
+                
+                # Try to extract JSON if it's wrapped in markdown or other text
+                if "```json" in response_content:
+                    start = response_content.find("```json") + 7
+                    end = response_content.find("```", start)
+                    response_content = response_content[start:end].strip()
+                elif "```" in response_content:
+                    start = response_content.find("```") + 3
+                    end = response_content.rfind("```")
+                    response_content = response_content[start:end].strip()
+                
+                result = json.loads(response_content)
+                medical_events = result.get("medical_events", [])
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse JSON response: {e}")
+                logger.error(f"Response content: {response.choices[0].message.content}")
+                # Try fallback extraction
+                return await self._fallback_keyword_extraction(text)
             
             # Convert to the expected format
             entities = []
             for event in medical_events:
+                # Generate event_id
+                import uuid
+                event_id = str(uuid.uuid4())
+                
                 entities.append({
+                    "event_id": event_id,
                     "type": "medical_event",
                     "body_part": event.get("body_part"),
                     "condition": event.get("condition"),
                     "severity": event.get("severity"),
+                    "symptoms": event.get("symptoms", []),
+                    "treatments": event.get("treatments", []),
                     "date": event.get("date", ""),
+                    "summary": event.get("summary", ""),
                     "confidence": event.get("confidence", 0.8),
-                    "description": event.get("description", ""),
-                    "extraction_method": "llm_structured_output"
+                    "source": "document_extraction",
+                    "extraction_method": "llm_structured_output",
+                    "created_at": datetime.utcnow().isoformat()
                 })
             
             logger.info(f"LLM extracted {len(entities)} medical entities from document")
@@ -378,8 +425,8 @@ Return a JSON object with an array of medical events following the specified sch
                     # Handle fallback keyword-extracted entities
                     await self._create_fallback_medical_event(neo4j_client, user_id, document_id, entity)
             
-            # Auto-update body part severities after processing
-            neo4j_client.auto_update_body_part_severities(user_id)
+            # Enhanced severity update using LLM assessment
+            await self._enhanced_severity_update(user_id, entities)
             
             logger.info(f"Neo4j storage completed for document {document_id}: {len(entities)} entities processed")
             
@@ -394,7 +441,7 @@ Return a JSON object with an array of medical events following the specified sch
         document_id: str,
         entity: Dict[str, Any]
     ):
-        """Create a medical event from LLM-extracted data."""
+        """Create a medical event from LLM-extracted data with enhanced schema."""
         try:
             # Parse date if provided
             event_date = datetime.utcnow()
@@ -405,17 +452,30 @@ Return a JSON object with an array of medical events following the specified sch
                 except:
                     logger.warning(f"Could not parse date: {entity.get('date')}")
             
-            # Create comprehensive event data
+            # Create comprehensive event data following MedicalEvent schema
             event_data = {
+                "event_id": entity.get("event_id", str(uuid.uuid4())),
                 "title": entity.get("condition", "Medical Finding"),
-                "description": f"{entity.get('description', '')} (Source: Document {document_id})",
+                "description": entity.get("summary", f"Medical event from document {document_id}"),
                 "event_type": "medical_condition",
                 "timestamp": event_date,
+                "date": entity.get("date", event_date.isoformat()),
                 "source": "llm_extraction",
                 "severity": entity.get("severity", "mild"),
                 "confidence": entity.get("confidence", 0.8),
                 "body_part": entity.get("body_part"),
-                "extraction_method": "llm_structured_output"
+                "condition": entity.get("condition"),
+                "symptoms": entity.get("symptoms", []),
+                "treatments": entity.get("treatments", []),
+                "summary": entity.get("summary", ""),
+                "extraction_method": "llm_structured_output",
+                "properties": {
+                    "document_id": document_id,
+                    "symptoms": entity.get("symptoms", []),
+                    "treatments": entity.get("treatments", []),
+                    "icd_codes": entity.get("icd_codes", []),
+                    "snomed_codes": entity.get("snomed_codes", [])
+                }
             }
             
             # Create the medical event in Neo4j
@@ -521,15 +581,15 @@ Return a JSON object with an array of medical events following the specified sch
         self,
         user_id: str,
         document_id: str,
-        text: str
+        text: str,
+        entities: List[Dict[str, Any]] = None
     ):
-        """Generate and store text embeddings in Milvus."""
+        """Generate and store text embeddings in Milvus with enhanced medical event data."""
         try:
             milvus_client = get_milvus()
             
-            # Split text into chunks for better embeddings
+            # Store main document embeddings
             chunks = self._split_text_into_chunks(text, max_length=500)
-            
             if chunks:
                 milvus_client.store_document_embeddings(
                     user_id=user_id,
@@ -538,9 +598,65 @@ Return a JSON object with an array of medical events following the specified sch
                     metadata={"source": "document_processing"}
                 )
             
+            # Store individual medical event embeddings for better retrieval
+            if entities:
+                for entity in entities:
+                    if entity.get("extraction_method") == "llm_structured_output":
+                        # Create rich text for embedding from medical event
+                        event_text = self._create_event_embedding_text(entity)
+                        if event_text:
+                            milvus_client.store_document_embeddings(
+                                user_id=user_id,
+                                document_id=f"{document_id}_{entity.get('event_id', 'unknown')}",
+                                text_chunks=[event_text],
+                                metadata={
+                                    "source": "medical_event",
+                                    "event_id": entity.get("event_id"),
+                                    "body_part": entity.get("body_part"),
+                                    "severity": entity.get("severity"),
+                                    "condition": entity.get("condition"),
+                                    "confidence": entity.get("confidence", 0.8)
+                                }
+                            )
+            
         except Exception as e:
             logger.error(f"Milvus storage failed: {e}")
             # Don't raise - embeddings storage is not critical
+    
+    def _create_event_embedding_text(self, entity: Dict[str, Any]) -> str:
+        """Create rich text for embedding from medical event."""
+        try:
+            parts = []
+            
+            # Add condition and body part
+            if entity.get("condition"):
+                parts.append(f"Condition: {entity['condition']}")
+            if entity.get("body_part"):
+                parts.append(f"Body part: {entity['body_part']}")
+            
+            # Add severity
+            if entity.get("severity"):
+                parts.append(f"Severity: {entity['severity']}")
+            
+            # Add summary
+            if entity.get("summary"):
+                parts.append(f"Summary: {entity['summary']}")
+            
+            # Add symptoms
+            if entity.get("symptoms"):
+                symptoms_text = ", ".join(entity["symptoms"])
+                parts.append(f"Symptoms: {symptoms_text}")
+            
+            # Add treatments
+            if entity.get("treatments"):
+                treatments_text = ", ".join(entity["treatments"])
+                parts.append(f"Treatments: {treatments_text}")
+            
+            return ". ".join(parts)
+            
+        except Exception as e:
+            logger.error(f"Failed to create event embedding text: {e}")
+            return entity.get("summary", entity.get("condition", ""))
     
     def _split_text_into_chunks(self, text: str, max_length: int = 500) -> List[str]:
         """Split text into chunks for embedding."""
@@ -564,6 +680,280 @@ Return a JSON object with an array of medical events following the specified sch
             chunks.append(current_chunk.strip())
         
         return chunks
+    
+    async def _extract_and_store_lifestyle_factors(
+        self,
+        user_id: str,
+        text: str,
+        entities: List[Dict[str, Any]]
+    ):
+        """Extract lifestyle factors and update long-term memory."""
+        try:
+            from src.chat.long_term import LongTermMemory
+            
+            ltm = LongTermMemory()
+            
+            # Extract lifestyle indicators from text and entities
+            text_lower = text.lower()
+            
+            lifestyle_updates = {}
+            
+            # Check for smoking status
+            if any(term in text_lower for term in ["smok", "cigarette", "tobacco", "nicotine"]):
+                if any(term in text_lower for term in ["quit", "former", "ex-smoker", "stopped"]):
+                    lifestyle_updates["smoking_status"] = "former_smoker"
+                else:
+                    lifestyle_updates["smoking_status"] = "current_smoker"
+            
+            # Check for alcohol use
+            if any(term in text_lower for term in ["alcohol", "drink", "wine", "beer", "liquor"]):
+                if any(term in text_lower for term in ["excessive", "heavy", "abuse", "dependence"]):
+                    lifestyle_updates["alcohol_use"] = "heavy"
+                elif any(term in text_lower for term in ["social", "occasional", "moderate"]):
+                    lifestyle_updates["alcohol_use"] = "moderate"
+                else:
+                    lifestyle_updates["alcohol_use"] = "present"
+            
+            # Check for exercise/activity level
+            if any(term in text_lower for term in ["sedentary", "inactive", "no exercise"]):
+                lifestyle_updates["activity_level"] = "sedentary"
+            elif any(term in text_lower for term in ["active", "exercise", "sports", "gym"]):
+                lifestyle_updates["activity_level"] = "active"
+            
+            # Check for diet patterns
+            if any(term in text_lower for term in ["obesity", "overweight", "high bmi"]):
+                lifestyle_updates["weight_status"] = "overweight"
+            elif any(term in text_lower for term in ["underweight", "malnourished"]):
+                lifestyle_updates["weight_status"] = "underweight"
+            
+            # Extract chronic conditions for medical history
+            chronic_conditions = []
+            for entity in entities:
+                if entity.get("extraction_method") == "llm_structured_output":
+                    condition = entity.get("condition", "")
+                    severity = entity.get("severity", "")
+                    body_part = entity.get("body_part", "")
+                    
+                    # Identify chronic conditions
+                    chronic_keywords = ["diabetes", "hypertension", "asthma", "copd", "arthritis", 
+                                       "heart disease", "cancer", "kidney disease", "liver disease"]
+                    if any(keyword in condition.lower() for keyword in chronic_keywords):
+                        chronic_conditions.append({
+                            "condition": condition,
+                            "body_part": body_part,
+                            "severity": severity,
+                            "source": "document_extraction",
+                            "date_identified": datetime.utcnow().isoformat()
+                        })
+            
+            # Update long-term memory if we found any lifestyle factors
+            if lifestyle_updates or chronic_conditions:
+                update_data = {}
+                
+                if lifestyle_updates:
+                    update_data["profile"] = lifestyle_updates
+                
+                if chronic_conditions:
+                    # Get existing medical history and merge
+                    existing_context = await ltm.get_user_context(user_id)
+                    existing_history = existing_context.get("medical_history", [])
+                    
+                    # Add new chronic conditions, avoiding duplicates
+                    for condition in chronic_conditions:
+                        if not any(existing.get("condition") == condition["condition"] 
+                                 for existing in existing_history):
+                            existing_history.append(condition)
+                    
+                    update_data["medical_history"] = existing_history
+                
+                await ltm.update(user_id, update_data)
+                logger.info(f"Updated long-term memory for user {user_id}: {len(lifestyle_updates)} lifestyle factors, {len(chronic_conditions)} chronic conditions")
+        
+        except Exception as e:
+            logger.error(f"Failed to extract/store lifestyle factors: {e}")
+            # Don't raise - this is not critical for document processing
+
+    async def _llm_assess_body_part_severity(
+        self,
+        user_id: str,
+        body_part: str,
+        events: List[Dict[str, Any]]
+    ) -> str:
+        """
+        Use LLM to assess overall body part severity based on events.
+        This provides an AI-driven enhancement to rule-based severity calculation.
+        """
+        try:
+            from openai import AsyncOpenAI
+            from src.config.settings import settings
+            
+            if not events:
+                return "normal"
+            
+            # Prepare events summary for LLM
+            events_summary = []
+            for event in events:
+                event_desc = f"- {event.get('condition', 'Unknown condition')}"
+                if event.get('severity'):
+                    event_desc += f" (severity: {event['severity']})"
+                if event.get('date'):
+                    event_desc += f" on {event['date']}"
+                if event.get('summary'):
+                    event_desc += f": {event['summary']}"
+                events_summary.append(event_desc)
+            
+            events_text = "\n".join(events_summary)
+            
+            # Create LLM prompt for severity assessment
+            prompt = f"""You are a medical AI assistant. Based on the following medical events affecting the {body_part}, assess the overall current severity level.
+
+Recent medical events for {body_part}:
+{events_text}
+
+Guidelines:
+- critical: Life-threatening conditions requiring immediate intervention
+- severe: Serious conditions requiring urgent medical attention  
+- moderate: Conditions that need medical management but not urgent
+- mild: Minor conditions or early-stage findings
+- normal: Normal findings or well-managed/resolved conditions
+
+Consider:
+1. Recency of events (more recent events have higher weight)
+2. Severity of individual events
+3. Number and frequency of events
+4. Whether conditions appear resolved or ongoing
+
+Respond with only one word: critical, severe, moderate, mild, or normal"""
+
+            client = AsyncOpenAI(api_key=settings.openai_api_key)
+            
+            response = await client.chat.completions.create(
+                model=settings.openai_model_chat,
+                messages=[
+                    {"role": "system", "content": "You are a medical AI assistant that provides severity assessments based on patient data."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=10
+            )
+            
+            severity = response.choices[0].message.content.strip().lower()
+            
+            # Validate response
+            valid_severities = ["critical", "severe", "moderate", "mild", "normal"]
+            if severity not in valid_severities:
+                logger.warning(f"LLM returned invalid severity '{severity}', defaulting to rule-based")
+                return None  # Fall back to rule-based
+            
+            logger.info(f"LLM assessed {body_part} severity as: {severity}")
+            return severity
+            
+        except Exception as e:
+            logger.error(f"LLM severity assessment failed: {e}")
+            return None  # Fall back to rule-based assessment
+    
+    async def _llm_severity_assessment(self, description: str) -> str:
+        """
+        Use LLM to assess the severity of a medical condition from its description.
+        
+        Args:
+            description: Medical condition description
+            
+        Returns:
+            Severity level: normal, mild, moderate, severe, or critical
+        """
+        try:
+            from openai import AsyncOpenAI
+            from src.config.settings import settings
+            
+            prompt = f"""You are a medical AI assistant. Assess the severity of this medical condition/event:
+
+"{description}"
+
+Severity levels:
+- normal: No issues, routine care, or normal findings
+- mild: Minor issues, no immediate concern
+- moderate: Requires attention but not urgent
+- severe: Serious condition requiring prompt treatment
+- critical: Life-threatening, immediate intervention needed
+
+Consider:
+1. The urgency of the condition
+2. Potential for complications
+3. Impact on patient's health
+4. Treatment requirements
+
+Respond with only one word: normal, mild, moderate, severe, or critical"""
+
+            client = AsyncOpenAI(api_key=settings.openai_api_key)
+            
+            response = await client.chat.completions.create(
+                model=settings.openai_model_chat,
+                messages=[
+                    {"role": "system", "content": "You are a medical AI that assesses condition severity. Respond with only the severity level."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=10
+            )
+            
+            severity = response.choices[0].message.content.strip().lower()
+            
+            # Validate response
+            valid_severities = ["normal", "mild", "moderate", "severe", "critical"]
+            if severity in valid_severities:
+                return severity
+            else:
+                logger.warning(f"LLM returned invalid severity '{severity}', defaulting to moderate")
+                return "moderate"
+                
+        except Exception as e:
+            logger.error(f"LLM severity assessment failed for '{description}': {e}")
+            return "moderate"  # Default fallback
+    
+    async def _enhanced_severity_update(self, user_id: str, entities: List[Dict[str, Any]]):
+        """
+        Enhanced severity update using LLM assessment in addition to rule-based calculation.
+        """
+        try:
+            from src.db.neo4j_db import get_graph
+            
+            neo4j_client = get_graph()
+            
+            # Get affected body parts
+            affected_parts = set()
+            for entity in entities:
+                if entity.get("body_part"):
+                    affected_parts.add(entity["body_part"])
+            
+            # For each affected body part, assess severity with LLM
+            for body_part in affected_parts:
+                try:
+                    # Get recent events for this body part
+                    recent_events = neo4j_client.get_body_part_history(user_id, body_part, limit=10)
+                    
+                    if recent_events:
+                        # Try LLM assessment first
+                        llm_severity = await self._llm_assess_body_part_severity(user_id, body_part, recent_events)
+                        
+                        if llm_severity:
+                            # Use LLM assessment
+                            neo4j_client.update_body_part_severity(user_id, body_part, llm_severity)
+                            logger.info(f"Updated {body_part} severity to {llm_severity} (LLM assessment)")
+                        else:
+                            # Fall back to rule-based assessment
+                            rule_severity = neo4j_client.calculate_severity_from_events(user_id, body_part)
+                            neo4j_client.update_body_part_severity(user_id, body_part, rule_severity)
+                            logger.info(f"Updated {body_part} severity to {rule_severity} (rule-based)")
+                
+                except Exception as e:
+                    logger.error(f"Failed to update severity for {body_part}: {e}")
+            
+        except Exception as e:
+            logger.error(f"Enhanced severity update failed: {e}")
+            # Fall back to standard auto-update
+            neo4j_client = get_graph()
+            neo4j_client.auto_update_body_part_severities(user_id)
 
 
 # Global ingestion agent instance

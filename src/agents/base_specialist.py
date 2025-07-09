@@ -219,7 +219,7 @@ class BaseSpecialist(ABC):
         try:
             # Initial reasoning phase
             response = await client.chat.completions.create(
-                model=settings.openai_model_chat,
+                model=settings.openai_model_chat,  # Use configured model
                 messages=messages,
                 tools=self.tools_schema,
                 tool_choice="auto",
@@ -267,7 +267,7 @@ class BaseSpecialist(ABC):
                 
                 # Get next response with tool results
                 response = await client.chat.completions.create(
-                    model=settings.openai_model_chat,
+                    model=settings.openai_model_chat,  # Use configured model
                     messages=messages,
                     tools=self.tools_schema,
                     tool_choice="auto",
@@ -329,7 +329,7 @@ class BaseSpecialist(ABC):
             }
             
             stream = await client.chat.completions.create(
-                model=settings.openai_model_chat,
+                model=settings.openai_model_chat,  # Use configured model
                 messages=messages,
                 tools=self.tools_schema,
                 tool_choice="auto",
@@ -399,12 +399,47 @@ class BaseSpecialist(ABC):
         """Format context information for the LLM."""
         context_parts = []
         
+        # Add user profile from long-term memory
+        if "user_profile" in context and context["user_profile"]:
+            context_parts.append("Patient Profile:")
+            profile = context["user_profile"]
+            for key, value in profile.items():
+                formatted_key = key.replace("_", " ").title()
+                context_parts.append(f"- {formatted_key}: {value}")
+        
+        # Add current body part statuses (non-normal severities)
+        if "current_body_part_status" in context:
+            status_info = context["current_body_part_status"]
+            if status_info:
+                context_parts.append("Current Health Status:")
+                for body_part, severity in status_info.items():
+                    if severity and severity.lower() not in ['na', 'normal']:
+                        context_parts.append(f"- {body_part}: {severity.title()} severity")
+        
+        # Add chronic conditions and long-term medical history
         if "medical_history" in context:
-            history = context["medical_history"][:5]  # Limit context size
-            if history:
-                context_parts.append("Recent Medical History:")
-                for record in history:
-                    context_parts.append(f"- {record.get('title', record.get('description', 'Medical event'))}")
+            history = context["medical_history"]
+            if isinstance(history, list) and history:
+                # Show chronic conditions first (up to 3)
+                chronic_conditions = [h for h in history if h.get('source') == 'document_extraction'][:3]
+                if chronic_conditions:
+                    context_parts.append("Known Medical Conditions:")
+                    for condition in chronic_conditions:
+                        context_parts.append(f"- {condition.get('condition', 'Unknown')} ({condition.get('body_part', 'General')}) - {condition.get('severity', 'Unknown severity')}")
+                
+                # Show recent medical events (up to 5)
+                recent_events = [h for h in history if h.get('source') != 'document_extraction'][:5]
+                if recent_events:
+                    context_parts.append("Recent Medical History:")
+                    for record in recent_events:
+                        context_parts.append(f"- {record.get('title', record.get('description', 'Medical event'))}")
+            elif isinstance(history, list):
+                # Fallback for old format
+                recent_history = history[:5]
+                if recent_history:
+                    context_parts.append("Recent Medical History:")
+                    for record in recent_history:
+                        context_parts.append(f"- {record.get('title', record.get('description', 'Medical event'))}")
         
         if "knowledge_graph" in context:
             kg_data = context["knowledge_graph"]
@@ -500,27 +535,62 @@ class BaseSpecialist(ABC):
             return f"Vector search unavailable: {str(e)}"
     
     async def _knowledge_graph_query(self, query: str, user_id: str) -> str:
-        """Query the knowledge graph for patient information."""
+        """Query the knowledge graph for patient information with enhanced medical event support."""
         try:
             graph_db = get_graph()
             
             # Ensure user is initialized
             graph_db.ensure_user_initialized(user_id)
             
+            # Enhanced query processing - look for body part mentions
+            from src.config.body_parts import identify_body_parts_from_text
+            mentioned_body_parts = identify_body_parts_from_text(query.lower())
+            
+            # Get comprehensive patient data
+            context = {}
+            
             # Get body part severities
             severities = graph_db.get_body_part_severities(user_id)
+            context["body_part_severities"] = severities
             
-            # Get recent events for context
-            timeline = graph_db.get_patient_timeline(user_id, limit=10)
+            # Get recent timeline events
+            timeline = graph_db.get_patient_timeline(user_id, limit=20)
+            context["recent_events"] = timeline
             
-            # Build context response
-            context = {
-                "body_part_severities": severities,
-                "recent_events": timeline,
-                "query_processed": True
+            # If specific body parts mentioned, get detailed history
+            if mentioned_body_parts:
+                body_part_details = {}
+                for body_part in mentioned_body_parts:
+                    try:
+                        history = graph_db.get_body_part_history(user_id, body_part, limit=10)
+                        if history:
+                            body_part_details[body_part] = {
+                                "current_severity": severities.get(body_part, "NA"),
+                                "recent_events": history,
+                                "event_count": len(history)
+                            }
+                    except Exception as e:
+                        logger.warning(f"Could not get history for {body_part}: {e}")
+                
+                context["specific_body_parts"] = body_part_details
+            
+            # Add active conditions (non-normal severities)
+            active_conditions = {
+                bp: severity for bp, severity in severities.items()
+                if severity and severity.lower() not in ['na', 'normal']
+            }
+            context["active_conditions"] = active_conditions
+            
+            # Build response with relevant information
+            response = {
+                "query_processed": True,
+                "mentioned_body_parts": mentioned_body_parts,
+                "active_conditions_count": len(active_conditions),
+                "total_events": len(timeline),
+                "context": context
             }
             
-            return json.dumps(context)
+            return json.dumps(response)
             
         except Exception as e:
             logger.error(f"Knowledge graph query failed: {e}")

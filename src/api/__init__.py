@@ -16,6 +16,9 @@ from src.api.endpoints import (
     timeline,
     anatomy,
     events,
+    tools,
+    openai_compat,
+    openai_compatible,
 )
 
 _ROUTERS = [
@@ -25,6 +28,9 @@ _ROUTERS = [
     timeline,
     anatomy,
     events,
+    tools,
+    openai_compat,
+    openai_compatible,
 ]
 
 

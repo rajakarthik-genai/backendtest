@@ -3,7 +3,18 @@ FastAPI entry-point – starts app, connects to DBs, and mounts routers.
 
 Run via:
     uvicorn src.main:app --host 0.0.0.0 --port 8000
+    
+Or directly:
+    python src/main.py --host 0.0.0.0 --port 8000
 """
+
+import sys
+import os
+from pathlib import Path
+
+# Add the project root directory to Python path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

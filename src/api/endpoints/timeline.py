@@ -263,203 +263,238 @@ async def create_timeline_event(
         raise HTTPException(status_code=500, detail="Failed to create timeline event")
 
 
-@router.get("/summary")
+@router.get("/summary", response_model=Dict[str, Any])
 async def get_timeline_summary(
     current_user: CurrentUser,
-    days: int = Query(30, description="Number of days to summarize")
+    body_part: Optional[str] = Query(None, description="Body part to focus on"),
+    time_period_days: int = Query(90, description="Number of days to analyze"),
 ):
     """
-    Get a summary of timeline events for the specified period.
+    Get LLM-powered timeline summary with structured event analysis.
     
-    Args:
-        current_user: Authenticated user
-        days: Number of days to look back
+    Returns:
+        Comprehensive timeline analysis including narrative summary,
+        key insights, treatment patterns, and recommendations.
     """
     try:
-        # Get user_id from JWT token
         user_id = current_user.user_id
         
-        # Calculate date range
-        end_date = datetime.utcnow()
-        start_date = end_date - timedelta(days=days)
+        # Get MongoDB client and initialize timeline builder
+        mongo_client = await get_mongo()
+        from src.agents.timeline_builder_agent import TimelineBuilder
+        timeline_builder = TimelineBuilder(mongo_client)
         
-        # Get events from MongoDB
-        try:
-            mongo_client = await get_mongo()
-            events = await mongo_client.get_timeline_events(user_id, limit=1000)
-        except Exception as e:
-            logger.warning(f"Failed to get MongoDB events: {e}")
-            events = []
-        
-        # Filter events within date range
-        period_events = []
-        for event in events:
-            event_time = datetime.fromisoformat(event["timestamp"]) if isinstance(event["timestamp"], str) else event["timestamp"]
-            if start_date <= event_time <= end_date:
-                period_events.append(event)
-        
-        # Create summary statistics
-        summary = {
-            "period": {
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-                "days": days
-            },
-            "total_events": len(period_events),
-            "event_types": {},
-            "severity_distribution": {},
-            "daily_activity": {},
-            "trends": {}
-        }
-        
-        # Analyze event types
-        for event in period_events:
-            event_type = event.get("event_type", "unknown")
-            summary["event_types"][event_type] = summary["event_types"].get(event_type, 0) + 1
-            
-            severity = event.get("severity", "medium")
-            summary["severity_distribution"][severity] = summary["severity_distribution"].get(severity, 0) + 1
-            
-            # Daily activity - get date from each event
-            event_time = datetime.fromisoformat(event["timestamp"]) if isinstance(event["timestamp"], str) else event["timestamp"]
-            event_date = event_time.date().isoformat()
-            summary["daily_activity"][event_date] = summary["daily_activity"].get(event_date, 0) + 1
-        
-        # Calculate trends
-        if len(period_events) > 1:
-            recent_half = period_events[:len(period_events)//2]
-            older_half = period_events[len(period_events)//2:]
-            
-            summary["trends"]["activity_trend"] = "increasing" if len(recent_half) > len(older_half) else "decreasing"
-        else:
-            summary["trends"]["activity_trend"] = "stable"
-        
-        # Log user action
-        log_user_action(
-            user_id,
-            "timeline_summary_view",
-            {
-                "days": days,
-                "total_events": len(period_events)
-            }
+        # Generate LLM-powered timeline summary
+        summary = await timeline_builder.generate_timeline_summary(
+            patient_id=user_id,
+            body_part=body_part,
+            time_period_days=time_period_days
         )
         
-        return summary
-        
-    except Exception as e:
-        logger.error(f"Timeline summary failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate timeline summary")
-
-
-@router.get("/search")
-async def search_timeline_events(
-    current_user: CurrentUser,
-    event_type: Optional[str] = Query(None, description="Filter by event type"),
-    severity: Optional[str] = Query(None, description="Filter by severity"),
-    start_date: Optional[str] = Query(None, description="Start date (ISO format)"),
-    end_date: Optional[str] = Query(None, description="End date (ISO format)"),
-    search_term: Optional[str] = Query(None, description="Search in title/description"),
-    limit: int = Query(50, description="Maximum number of results")
-):
-    """
-    Search and filter timeline events.
-    
-    Args:
-        current_user: Authenticated user
-        event_type: Filter by event type
-        severity: Filter by severity level
-        start_date: Start date filter (ISO format)
-        end_date: End date filter (ISO format)
-        search_term: Search term for title/description
-        limit: Maximum number of results
-    """
-    try:
-        # Get user_id from JWT token
-        user_id = current_user.user_id
-        
-        # Get all events first
-        try:
-            mongo_client = await get_mongo()
-            all_events = await mongo_client.get_timeline_events(user_id, limit=1000)
-        except Exception as e:
-            logger.warning(f"Failed to get MongoDB events: {e}")
-            all_events = []
-        
-        # Apply filters
-        filtered_events = []
-        
-        for event in all_events:
-            # Event type filter
-            if event_type and event.get("event_type") != event_type:
-                continue
-            
-            # Severity filter
-            if severity and event.get("severity") != severity:
-                continue
-            
-            # Date range filter
-            event_time = datetime.fromisoformat(event["timestamp"]) if isinstance(event["timestamp"], str) else event["timestamp"]
-            
-            if start_date:
-                try:
-                    start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
-                    if event_time < start_dt:
-                        continue
-                except ValueError:
-                    raise HTTPException(status_code=400, detail="Invalid start_date format")
-            
-            if end_date:
-                try:
-                    end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
-                    if event_time > end_dt:
-                        continue
-                except ValueError:
-                    raise HTTPException(status_code=400, detail="Invalid end_date format")
-            
-            # Search term filter
-            if search_term:
-                search_lower = search_term.lower()
-                title = event.get("title", "").lower()
-                description = event.get("description", "").lower()
-                if search_lower not in title and search_lower not in description:
-                    continue
-            
-            filtered_events.append(event)
-        
-        # Apply limit
-        result_events = filtered_events[:limit]
-        
-        # Log user action
+        # Log the action
         log_user_action(
             user_id,
-            "timeline_search",
+            "timeline_summary_generated",
             {
-                "filters": {
-                    "event_type": event_type,
-                    "severity": severity,
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "search_term": search_term is not None
-                },
-                "result_count": len(result_events)
+                "body_part": body_part,
+                "time_period_days": time_period_days,
+                "event_count": summary.get("event_count", 0)
             }
         )
         
         return {
-            "events": result_events,
-            "total_found": len(filtered_events),
-            "returned": len(result_events),
-            "filters_applied": {
-                "event_type": event_type,
-                "severity": severity,
-                "start_date": start_date,
-                "end_date": end_date,
-                "search_term": bool(search_term)
+            "success": True,
+            "user_id": user_id,
+            "body_part_filter": body_part,
+            "analysis_period_days": time_period_days,
+            **summary
+        }
+        
+    except Exception as e:
+        logger.error(f"Timeline summary generation failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate timeline summary: {str(e)}"
+        )
+
+
+@router.get("/insights/{body_part}")
+async def get_body_part_timeline_insights(
+    body_part: str,
+    current_user: CurrentUser,
+    days: int = Query(180, description="Days to analyze")
+):
+    """
+    Get detailed timeline insights for a specific body part.
+    
+    Args:
+        body_part: Name of the body part to analyze
+        days: Number of days to look back (default 180)
+        
+    Returns:
+        Detailed analysis including progression, treatments, and recommendations
+    """
+    try:
+        user_id = current_user.user_id
+        
+        # Get MongoDB client and initialize timeline builder  
+        mongo_client = await get_mongo()
+        from src.agents.timeline_builder_agent import TimelineBuilder
+        timeline_builder = TimelineBuilder(mongo_client)
+        
+        # Generate focused analysis for the body part
+        analysis = await timeline_builder.generate_timeline_summary(
+            patient_id=user_id,
+            body_part=body_part,
+            time_period_days=days
+        )
+        
+        # Also get Neo4j data for current severity
+        try:
+            neo4j_client = get_graph()
+            body_part_details = neo4j_client.get_body_part_details(user_id, body_part)
+            current_severity = body_part_details.get("severity", "Unknown")
+            recent_events = body_part_details.get("recent_events", [])
+        except Exception as e:
+            logger.warning(f"Could not retrieve Neo4j data for {body_part}: {e}")
+            current_severity = "Unknown"
+            recent_events = []
+        
+        return {
+            "success": True,
+            "body_part": body_part,
+            "current_severity": current_severity,
+            "recent_neo4j_events": recent_events,
+            "timeline_analysis": analysis,
+            "analysis_date": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Body part timeline insights failed for {body_part}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get insights for {body_part}: {str(e)}"
+        )
+
+
+@router.get("/{user_id}/{body_part}")
+async def get_timeline_by_body_part(
+    user_id: str,
+    body_part: str,
+    current_user: CurrentUser,
+    limit: int = Query(50, description="Maximum number of events"),
+    start_date: Optional[str] = Query(None, description="Start date (ISO format)"),
+    end_date: Optional[str] = Query(None, description="End date (ISO format)")
+):
+    """
+    Get timeline events for a specific user and body part.
+    
+    This endpoint implements the GET /timeline/{userId}/{bodyPart} pattern
+    from the implementation plan for body part specific timeline queries.
+    """
+    try:
+        # Ensure user can only access their own data
+        if user_id != current_user.user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        from src.config.body_parts import validate_body_part
+        from src.utils.schema import TimelineEventResponse
+        
+        # Validate body part
+        if not validate_body_part(body_part):
+            raise HTTPException(status_code=400, detail=f"Invalid body part: {body_part}")
+        
+        # Get events from Neo4j for this specific body part
+        neo4j_client = get_graph()
+        neo4j_client.ensure_user_initialized(user_id)
+        
+        # Query events that affect this body part
+        events = neo4j_client.get_body_part_history(user_id, body_part, limit=limit)
+        
+        # Format events according to MedicalEvent schema
+        formatted_events = []
+        for event in events:
+            formatted_event = TimelineEventResponse(
+                event_id=event.get("id", ""),
+                date=event.get("date", event.get("timestamp", "")),
+                body_part=body_part,
+                severity=event.get("severity", "normal"),
+                symptoms=event.get("symptoms", []),
+                treatments=event.get("treatments", []),
+                conditions=event.get("conditions", [event.get("title", "")]),
+                summary=event.get("summary", event.get("description", "")),
+                confidence=event.get("confidence", 0.8),
+                source=event.get("source", "neo4j"),
+                metadata=event.get("properties", {})
+            )
+            formatted_events.append(formatted_event.dict())
+        
+        # Apply date filters if provided
+        if start_date or end_date:
+            filtered_events = []
+            for event in formatted_events:
+                event_date = event.get("date", "")
+                if event_date:
+                    try:
+                        event_dt = datetime.fromisoformat(event_date.replace("Z", "+00:00"))
+                        
+                        # Check start date
+                        if start_date:
+                            start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+                            if event_dt < start_dt:
+                                continue
+                        
+                        # Check end date
+                        if end_date:
+                            end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                            if event_dt > end_dt:
+                                continue
+                        
+                        filtered_events.append(event)
+                    except ValueError:
+                        # Include events with invalid dates
+                        filtered_events.append(event)
+                else:
+                    # Include events without dates
+                    filtered_events.append(event)
+            
+            formatted_events = filtered_events
+        
+        # Sort by date (most recent first)
+        formatted_events.sort(
+            key=lambda x: x.get("date", "1970-01-01T00:00:00Z"),
+            reverse=True
+        )
+        
+        # Log user action
+        log_user_action(
+            user_id,
+            "body_part_timeline_accessed",
+            {
+                "body_part": body_part,
+                "event_count": len(formatted_events),
+                "filters": {
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "limit": limit
+                }
             }
+        )
+        
+        return {
+            "user_id": user_id,
+            "body_part": body_part,
+            "events": formatted_events,
+            "total_events": len(formatted_events),
+            "date_range": {
+                "start": start_date,
+                "end": end_date
+            },
+            "timestamp": datetime.utcnow().isoformat()
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Timeline search failed: {e}")
-        raise HTTPException(status_code=500, detail="Timeline search failed")
+        logger.error(f"Body part timeline retrieval failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve body part timeline")

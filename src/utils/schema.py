@@ -210,5 +210,110 @@ class ProcessingStatus(BaseModel):
     error: Optional[str] = None
 
 
+class MedicalEvent(BaseModel):
+    """
+    Structured MedicalEvent schema for LLM-based timeline generation.
+    
+    This model follows the implementation plan for timeline events with:
+    - Event identification and dating
+    - Body part mapping to 30 predefined parts
+    - Severity classification
+    - Symptom and treatment tracking
+    - LLM-generated summaries
+    """
+    event_id: str = Field(..., description="UUID for unique event identification")
+    date: Optional[str] = Field(None, description="ISO date or year when event occurred")
+    body_part: str = Field(..., description="Affected body part from predefined list")
+    severity: str = Field(..., description="Severity level: critical, severe, moderate, mild, normal")
+    symptoms: List[str] = Field(default_factory=list, description="List of symptoms")
+    treatments: List[str] = Field(default_factory=list, description="List of treatments")
+    conditions: List[str] = Field(default_factory=list, description="Related medical conditions")
+    summary: str = Field(..., description="LLM-generated narrative summary")
+    confidence: float = Field(0.8, description="Extraction confidence score 0.0-1.0")
+    source: str = Field(default="document_extraction", description="Source of the event data")
+    extraction_method: str = Field(default="llm_structured_output", description="Method used for extraction")
+    icd_codes: List[str] = Field(default_factory=list, description="ICD-10 codes if available")
+    snomed_codes: List[str] = Field(default_factory=list, description="SNOMED-CT codes if available")
+    created_at: datetime = Field(default_factory=datetime.utcnow, description="Event creation timestamp")
+    updated_at: datetime = Field(default_factory=datetime.utcnow, description="Last update timestamp")
+
+
+class MedicalEventExtraction(BaseModel):
+    """Response model for LLM medical event extraction."""
+    medical_events: List[MedicalEvent] = Field(..., description="Extracted medical events")
+    extraction_metadata: Dict[str, Any] = Field(default_factory=dict, description="Extraction metadata")
+    total_events: int = Field(0, description="Total number of events extracted")
+    confidence_score: float = Field(0.0, description="Overall extraction confidence")
+
+
+class TimelineQuery(BaseModel):
+    """Enhanced timeline query model for body part specific queries."""
+    user_id: str = Field(..., description="User identifier")
+    body_part: Optional[str] = Field(None, description="Specific body part to filter by")
+    start_date: Optional[str] = Field(None, description="Start date for timeline (ISO format)")
+    end_date: Optional[str] = Field(None, description="End date for timeline (ISO format)")
+    severity_filter: Optional[List[str]] = Field(None, description="Filter by severity levels")
+    limit: int = Field(50, description="Maximum number of events to return")
+    offset: int = Field(0, description="Offset for pagination")
+    include_summary: bool = Field(True, description="Include event summaries")
+
+
+class TimelineEventResponse(BaseModel):
+    """Enhanced timeline event response with full medical event data."""
+    event_id: str
+    date: Optional[str]
+    body_part: str
+    severity: str
+    symptoms: List[str]
+    treatments: List[str]
+    conditions: List[str]
+    summary: str
+    confidence: float
+    source: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CrewAITool(BaseModel):
+    """Tool definition for CrewAI integration."""
+    name: str = Field(..., description="Tool name")
+    description: str = Field(..., description="Tool description")
+    parameters: Dict[str, Any] = Field(..., description="Tool parameters schema")
+    function: str = Field(..., description="Function to call")
+
+
+class CrewAIToolResponse(BaseModel):
+    """Response model for CrewAI tool execution."""
+    tools: List[CrewAITool] = Field(..., description="Available tools")
+    version: str = Field("1.0", description="API version")
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class OpenAIChatMessage(BaseModel):
+    """OpenAI-compatible chat message model."""
+    role: str = Field(..., description="Message role: user, assistant, system")
+    content: str = Field(..., description="Message content")
+    name: Optional[str] = Field(None, description="Optional message name")
+
+
+class OpenAIChatRequest(BaseModel):
+    """OpenAI-compatible chat completion request."""
+    model: str = Field(default="gpt-3.5-turbo", description="Model to use")
+    messages: List[OpenAIChatMessage] = Field(..., description="Chat messages")
+    temperature: float = Field(0.7, description="Temperature for generation")
+    max_tokens: Optional[int] = Field(None, description="Maximum tokens to generate")
+    stream: bool = Field(False, description="Enable streaming")
+    user: Optional[str] = Field(None, description="User identifier")
+
+
+class OpenAIChatResponse(BaseModel):
+    """OpenAI-compatible chat completion response."""
+    id: str = Field(..., description="Response ID")
+    object: str = Field("chat.completion", description="Object type")
+    created: int = Field(..., description="Creation timestamp")
+    model: str = Field(..., description="Model used")
+    choices: List[Dict[str, Any]] = Field(..., description="Response choices")
+    usage: Dict[str, Any] = Field(..., description="Token usage")
+
+
 # Legacy compatibility
 TimelineRecord = TimelineEvent  # For backward compatibility

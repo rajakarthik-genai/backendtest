@@ -16,9 +16,9 @@ ENV_FILE = Path(".env")
 class Settings(BaseSettings):
     # ── OpenAI ───────────────────────────────────────────────────────────────
     openai_api_key: str = Field(..., validation_alias="openai_api_key")
-    openai_model_chat: str = Field("gpt-4o-mini", validation_alias="openai_model_chat")
+    openai_model_chat: str = Field("gpt-3.5-turbo", validation_alias="openai_model_chat")
     openai_model_search: str = Field(
-        "gpt-4o-mini-search-preview", validation_alias="openai_model_search"
+        "gpt-3.5-turbo", validation_alias="openai_model_search"
     )
 
     # ── MongoDB ──────────────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = Field("HS256", validation_alias="jwt_algorithm")
     access_token_expire_minutes: int = Field(15, validation_alias="access_token_expire_minutes")
     refresh_token_expire_days: int = Field(7, validation_alias="refresh_token_expire_days")
-    jwt_require_auth: bool = Field(False, validation_alias="jwt_require_auth")
+    jwt_require_auth: bool = Field(True, validation_alias="jwt_require_auth")
 
     # ── Encryption ───────────────────────────────────────────────────────────
     aes_encryption_key: str = Field(..., validation_alias="aes_encryption_key")

@@ -215,3 +215,15 @@ def remove_body_part(body_part: str) -> bool:
         DEFAULT_BODY_PARTS.remove(body_part)
         return True
     return False
+
+
+# Create a dictionary mapping each body part to its basic configuration
+BODY_PARTS = {
+    body_part: {
+        "name": body_part,
+        "severity": "normal",  # Default severity
+        "last_updated": None,
+        "notes": ""
+    }
+    for body_part in DEFAULT_BODY_PARTS
+}

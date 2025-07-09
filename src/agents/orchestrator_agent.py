@@ -280,13 +280,29 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
             mongo_client = await get_mongo()
             recent_records = await mongo_client.get_medical_records(user_id, limit=10)
             
+            # Get current body part severities from Neo4j
+            try:
+                neo4j_client = get_graph()
+                body_part_severities = neo4j_client.get_body_part_severities(user_id)
+                # Filter to only show non-normal severities
+                active_conditions = {
+                    bp: severity for bp, severity in body_part_severities.items()
+                    if severity and severity.lower() not in ['na', 'normal']
+                }
+            except Exception as e:
+                logger.warning(f"Could not retrieve body part severities: {e}")
+                active_conditions = {}
+            
             # Build context
             context = {
                 "user_id": user_id,
                 "session_id": session_id,
                 "chat_history": chat_history,
                 "short_term_memory": short_term_context,
-                "medical_history": medical_context,
+                "user_profile": medical_context.get("user_profile", {}),
+                "medical_history": medical_context.get("medical_history", []),
+                "preferences": medical_context.get("preferences", {}),
+                "current_body_part_status": active_conditions,
                 "recent_records": recent_records,
                 "timestamp": datetime.utcnow()
             }
