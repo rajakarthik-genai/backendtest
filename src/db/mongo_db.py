@@ -514,6 +514,121 @@ class MongoDB:
             logger.error(f"Failed to update timeline event: {e}")
             return False
 
+    async def store_clinical_record(
+        self,
+        clinical_record: Dict[str, Any]
+    ) -> str:
+        """Store a comprehensive clinical record."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            # Hash the patient_id for isolation
+            patient_id = clinical_record["patient_id"]
+            hashed_patient_id = self._hash_user_id(patient_id)
+            
+            # Prepare the clinical record for storage
+            record = {
+                "patient_id": hashed_patient_id,
+                "original_patient_id": patient_id,  # Keep for reference (remove in production)
+                "document_id": clinical_record["document_id"],
+                "document_title": clinical_record["document_title"],
+                "document_date": clinical_record["document_date"],
+                "clinician": clinical_record["clinician"],
+                "injuries": clinical_record["injuries"],
+                "diagnoses": clinical_record["diagnoses"],
+                "procedures": clinical_record["procedures"],
+                "medications": clinical_record["medications"],
+                "clinical_sections": clinical_record["clinical_sections"],
+                "narrative_sections": clinical_record["narrative_sections"],
+                "timeline": clinical_record["timeline"],
+                "medical_codes": clinical_record["medical_codes"],
+                "metadata": {
+                    **clinical_record["metadata"],
+                    "collection_type": "clinical_record",
+                    "stored_at": datetime.utcnow().isoformat()
+                },
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            }
+            
+            # Store in MongoDB
+            result = await self.db.clinical_records.insert_one(record)
+            
+            logger.info(f"Clinical record stored for patient {patient_id[:8]}... with ID: {result.inserted_id}")
+            return result.inserted_id
+            
+        except Exception as e:
+            logger.error(f"Failed to store clinical record: {e}")
+            raise
+    
+    async def get_clinical_records(
+        self,
+        user_id: str,
+        limit: int = 50,
+        skip: int = 0,
+        document_type: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Get clinical records for a user."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            # Build query
+            query = {"patient_id": hashed_user_id}
+            if document_type:
+                query["document_title"] = {"$regex": document_type, "$options": "i"}
+            
+            # Execute query
+            cursor = self.db.clinical_records.find(query).sort("created_at", -1).skip(skip).limit(limit)
+            records = await cursor.to_list(length=limit)
+            
+            # Remove hashed IDs from records
+            for record in records:
+                record["_id"] = str(record["_id"])
+                record.pop("patient_id", None)  # Remove hashed ID
+                record["patient_id"] = record.pop("original_patient_id", user_id)  # Restore original
+            
+            logger.info(f"Retrieved {len(records)} clinical records for user {user_id[:8]}...")
+            return records
+            
+        except Exception as e:
+            logger.error(f"Failed to get clinical records: {e}")
+            return []
+
+    async def get_clinical_record_by_document_id(
+        self,
+        user_id: str,
+        document_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get a specific clinical record by document ID."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            record = await self.db.clinical_records.find_one({
+                "patient_id": hashed_user_id,
+                "document_id": document_id
+            })
+            
+            if record:
+                record["_id"] = str(record["_id"])
+                record.pop("patient_id", None)  # Remove hashed ID
+                record["patient_id"] = record.pop("original_patient_id", user_id)  # Restore original
+                
+                logger.info(f"Retrieved clinical record {document_id} for user {user_id[:8]}...")
+                return record
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to get clinical record {document_id}: {e}")
+            return None
+
     async def close(self):
         """Close MongoDB connection."""
         if self.client:

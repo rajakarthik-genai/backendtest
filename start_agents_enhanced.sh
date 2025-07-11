@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Load environment variables if available
+if [ -f ~/.config/meditwin.env ]; then
+    source ~/.config/meditwin.env
+fi
+
+# Set defaults
+NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-"2z3PqE4KmxGxjlUc3GK7omc6PO6_7HMh7qg9gw6bpDcsnbTUg"}
+NGROK_DOMAIN=${NGROK_DOMAIN:-"mackerel-liberal-loosely.ngrok-free.app"}
+API_PORT=${API_PORT:-8000}
+LOG_FILE=${LOG_FILE:-"/tmp/meditwin-agents.log"}
+
+echo "=======================================" >> $LOG_FILE
+echo "Starting agents systemd script at $(date)" >> $LOG_FILE
+echo "=======================================" >> $LOG_FILE
+
+# Function to log and execute tmux commands
+send_tmux_cmd() {
+    local session=$1
+    local cmd=$2
+    local sleep_time=${3:-1}
+    
+    echo "Executing: $cmd" >> $LOG_FILE
+    tmux send-keys -t "$session" "$cmd" Enter
+    sleep $sleep_time
+}
+
+# Kill existing session if it exists
+echo "Checking for existing tmux session..." >> $LOG_FILE
+if tmux has-session -t meditwin-agents 2>/dev/null; then
+    echo "Killing existing session..." >> $LOG_FILE
+    tmux kill-session -t meditwin-agents
+fi
+
+# Create tmux session for agents in detached mode
+echo "Creating new tmux session..." >> $LOG_FILE
+tmux new-session -d -s meditwin-agents
+echo "Created tmux session: meditwin-agents" >> $LOG_FILE
+
+# Navigate to project directory
+send_tmux_cmd "meditwin-agents" "cd ~/agents/meditwin-agents" 2
+
+# Activate virtual environment
+send_tmux_cmd "meditwin-agents" "source .venv/bin/activate" 2
+
+# Install/update dependencies
+send_tmux_cmd "meditwin-agents" "uv pip install -r requirements.txt" 5
+
+# Start Docker services
+send_tmux_cmd "meditwin-agents" "docker compose up -d" 10
+
+# Start ngrok tunnel
+send_tmux_cmd "meditwin-agents" "ngrok http --domain=$NGROK_DOMAIN --authtoken=$NGROK_AUTHTOKEN $API_PORT" 3
+
+echo "All commands sent to tmux session" >> $LOG_FILE
+echo "Agents should be available at: https://$NGROK_DOMAIN" >> $LOG_FILE
+echo "Local API: http://localhost:$API_PORT" >> $LOG_FILE
+echo "TMux session: meditwin-agents" >> $LOG_FILE
+
+# Ensure the tmux session stays alive by preventing systemd from killing it
+exec sleep infinity

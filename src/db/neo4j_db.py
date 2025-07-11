@@ -50,17 +50,26 @@ class Neo4jDB:
         """Create constraints and indexes for performance."""
         try:
             with self.driver.session() as session:
+                # Drop old body part constraint if it exists
+                try:
+                    session.run("DROP CONSTRAINT body_part_name_unique IF EXISTS")
+                except:
+                    pass
+                
                 # Create unique constraints
                 session.run("CREATE CONSTRAINT patient_id_unique IF NOT EXISTS FOR (p:Patient) REQUIRE p.patient_id IS UNIQUE")
                 session.run("CREATE CONSTRAINT event_id_unique IF NOT EXISTS FOR (e:Event) REQUIRE e.event_id IS UNIQUE")
-                session.run("CREATE CONSTRAINT body_part_name_unique IF NOT EXISTS FOR (b:BodyPart) REQUIRE b.name IS UNIQUE")
+                
+                # Create patient-specific body part constraint
+                session.run("CREATE CONSTRAINT unique_bodypart_per_user IF NOT EXISTS FOR (b:BodyPart) REQUIRE (b.patient_id, b.name) IS UNIQUE")
                 
                 # Create indexes for performance
                 session.run("CREATE INDEX patient_user_id_index IF NOT EXISTS FOR (p:Patient) ON (p.user_id)")
                 session.run("CREATE INDEX event_timestamp_index IF NOT EXISTS FOR (e:Event) ON (e.timestamp)")
                 session.run("CREATE INDEX event_type_index IF NOT EXISTS FOR (e:Event) ON (e.event_type)")
+                session.run("CREATE INDEX bodypart_patient_index IF NOT EXISTS FOR (b:BodyPart) ON (b.patient_id)")
                 
-            logger.info("Neo4j constraints and indexes created")
+            logger.info("Neo4j constraints and indexes created with patient-specific body parts")
             
         except Exception as e:
             logger.error(f"Failed to create Neo4j constraints: {e}")
@@ -177,24 +186,27 @@ class Neo4jDB:
                     "created_at": datetime.utcnow().isoformat()
                 })
                 
-                # Create body part connections
+                # Create body part connections using patient-specific body parts
                 for body_part in affected_body_parts:
                     body_part_query = """
-                    MERGE (b:BodyPart {name: $body_part_name})
-                    WITH b
+                    MATCH (p:Patient {patient_id: $patient_id})
+                    MERGE (b:BodyPart {name: $body_part_name, patient_id: $patient_id})
+                    MERGE (p)-[:HAS_BODY_PART]->(b)
+                    WITH e, b
                     MATCH (e:Event {event_id: $event_id})
                     CREATE (e)-[:AFFECTS]->(b)
                     """
                     
                     session.run(body_part_query, {
                         "body_part_name": body_part,
+                        "patient_id": hashed_user_id,
                         "event_id": event_id
                     })
                 
                 # Update event count for affected body parts
                 if affected_body_parts:
                     count_query = """
-                    MATCH (p:Patient {patient_id: $patient_id})-[r:HAS_BODY_PART]->(b:BodyPart)
+                    MATCH (p:Patient {patient_id: $patient_id})-[r:HAS_BODY_PART]->(b:BodyPart {patient_id: $patient_id})
                     WHERE b.name IN $body_parts
                     SET r.event_count = coalesce(r.event_count, 0) + 1,
                         r.last_updated = $updated_at
@@ -266,8 +278,8 @@ class Neo4jDB:
             logger.error(f"Failed to get patient timeline: {e}")
             return []
     
-    def get_body_part_history(self, user_id: str, body_part: str) -> List[Dict[str, Any]]:
-        """Get all events affecting a specific body part for a user."""
+    def get_body_part_history(self, user_id: str, body_part: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """Get history of events for a specific body part."""
         if not self._initialized:
             raise RuntimeError("Neo4j not initialized")
         
@@ -276,33 +288,39 @@ class Neo4jDB:
             
             with self.driver.session() as session:
                 query = """
-                MATCH (p:Patient {patient_id: $patient_id})-[:HAS_EVENT]->(e:Event)-[:AFFECTS]->(b:BodyPart {name: $body_part})
-                RETURN e.event_id as event_id,
+                MATCH (p:Patient {patient_id: $patient_id})-[:HAS_EVENT]->(e:Event)-[:AFFECTS]->(b:BodyPart {name: $body_part, patient_id: $patient_id})
+                RETURN e.event_id as id,
                        e.title as title,
                        e.description as description,
-                       e.event_type as event_type,
                        e.timestamp as timestamp,
-                       e.severity as severity
+                       e.severity as severity,
+                       e.event_type as type,
+                       e.confidence as confidence,
+                       e.source as source
                 ORDER BY e.timestamp DESC
+                LIMIT $limit
                 """
                 
                 result = session.run(query, {
                     "patient_id": hashed_user_id,
-                    "body_part": body_part
+                    "body_part": body_part,
+                    "limit": limit
                 })
                 
-                events = []
+                history = []
                 for record in result:
-                    events.append({
-                        "event_id": record["event_id"],
+                    history.append({
+                        "id": record["id"],
                         "title": record["title"],
                         "description": record["description"],
-                        "event_type": record["event_type"],
                         "timestamp": record["timestamp"],
-                        "severity": record["severity"]
+                        "severity": record["severity"],
+                        "type": record["type"],
+                        "confidence": record["confidence"],
+                        "source": record["source"]
                     })
                 
-                return events
+                return history
                 
         except Exception as e:
             logger.error(f"Failed to get body part history: {e}")
@@ -448,7 +466,7 @@ class Neo4jDB:
     
     def initialize_user_graph(self, user_id: str, patient_data: Dict[str, Any] = None) -> bool:
         """
-        Initialize a complete user graph with patient node and all 30 body parts.
+        Initialize a complete user graph with patient node and patient-specific body parts.
         This is called automatically when a user first interacts with the system.
         """
         if not self._initialized:
@@ -483,17 +501,14 @@ class Neo4jDB:
                     "updated_at": datetime.utcnow().isoformat()
                 })
                 
-                # Create all body parts and connect them to the patient with initial NA severity
+                # Create patient-specific body parts and connect them to the patient
                 for body_part in body_parts:
                     body_part_query = """
-                    MERGE (b:BodyPart {name: $body_part_name})
-                    SET b.created_at = coalesce(b.created_at, $created_at)
-                    WITH b
                     MATCH (p:Patient {patient_id: $patient_id})
+                    MERGE (b:BodyPart {name: $body_part_name, patient_id: $patient_id})
+                    ON CREATE SET b.created_at = $created_at
                     MERGE (p)-[r:HAS_BODY_PART]->(b)
-                    SET r.severity = 'NA',
-                        r.last_updated = $updated_at,
-                        r.event_count = 0
+                    ON CREATE SET r.severity = 'NA', r.last_updated = $updated_at, r.event_count = 0
                     """
                     
                     session.run(body_part_query, {
@@ -503,7 +518,7 @@ class Neo4jDB:
                         "updated_at": datetime.utcnow().isoformat()
                     })
                 
-                logger.info(f"User graph initialized for user {user_id[:8]}... with {len(body_parts)} body parts")
+                logger.info(f"User graph initialized for user {user_id[:8]}... with {len(body_parts)} patient-specific body parts")
                 return True
                 
         except Exception as e:
@@ -542,11 +557,44 @@ class Neo4jDB:
             return self.initialize_user_graph(user_id, patient_data)
         return True
     
-    def get_body_part_severities(self, user_id: str) -> Dict[str, str]:
-        """
-        Get severity levels for all body parts for a user.
-        Returns a dictionary mapping body part names to severity levels.
-        """
+    def update_body_part_severities(self, user_id: str) -> bool:
+        """Update severities for all body parts based on recent events."""
+        if not self._initialized:
+            raise RuntimeError("Neo4j not initialized")
+        
+        try:
+            from src.config.body_parts import get_default_body_parts
+            
+            body_parts = get_default_body_parts()
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            with self.driver.session() as session:
+                for body_part in body_parts:
+                    # Calculate new severity based on events
+                    new_severity = self.calculate_severity_from_events(user_id, body_part)
+                    
+                    # Update the severity
+                    update_query = """
+                    MATCH (p:Patient {patient_id: $patient_id})-[r:HAS_BODY_PART]->(b:BodyPart {name: $body_part, patient_id: $patient_id})
+                    SET r.severity = $severity, r.last_updated = $updated_at
+                    """
+                    
+                    session.run(update_query, {
+                        "patient_id": hashed_user_id,
+                        "body_part": body_part,
+                        "severity": new_severity,
+                        "updated_at": datetime.utcnow().isoformat()
+                    })
+            
+            logger.info(f"Updated body part severities for user {user_id[:8]}...")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to update body part severities: {e}")
+            return False
+    
+    def get_body_part_severities(self, user_id: str) -> Dict[str, Any]:
+        """Get current severity status for all body parts."""
         if not self._initialized:
             raise RuntimeError("Neo4j not initialized")
         
@@ -554,13 +602,11 @@ class Neo4jDB:
             from src.config.body_parts import get_default_body_parts
             
             hashed_user_id = self._hash_user_id(user_id)
-            body_parts = get_default_body_parts()
+            severities = {}
             
             with self.driver.session() as session:
                 query = """
-                MATCH (b:BodyPart)
-                WHERE b.name IN $body_parts
-                OPTIONAL MATCH (p:Patient {patient_id: $patient_id})-[r:HAS_BODY_PART]->(b)
+                MATCH (p:Patient {patient_id: $patient_id})-[r:HAS_BODY_PART]->(b:BodyPart {patient_id: $patient_id})
                 RETURN b.name as body_part, 
                        coalesce(r.severity, 'NA') as severity,
                        coalesce(r.event_count, 0) as event_count,
@@ -568,19 +614,24 @@ class Neo4jDB:
                 ORDER BY b.name
                 """
                 
-                result = session.run(query, {
-                    "patient_id": hashed_user_id,
-                    "body_parts": body_parts
-                })
+                result = session.run(query, {"patient_id": hashed_user_id})
                 
-                severities = {}
                 for record in result:
-                    severities[record["body_part"]] = record["severity"]
+                    severities[record["body_part"]] = {
+                        "severity": record["severity"],
+                        "event_count": record["event_count"],
+                        "last_updated": record["last_updated"]
+                    }
                 
-                # Ensure all body parts are included, even if not in the database
-                for body_part in body_parts:
-                    if body_part not in severities:
-                        severities[body_part] = "NA"
+                # Ensure all default body parts are included
+                default_parts = get_default_body_parts()
+                for part in default_parts:
+                    if part not in severities:
+                        severities[part] = {
+                            "severity": "NA",
+                            "event_count": 0,
+                            "last_updated": None
+                        }
                 
                 return severities
                 
@@ -588,180 +639,56 @@ class Neo4jDB:
             logger.error(f"Failed to get body part severities: {e}")
             return {}
     
-    def update_body_part_severity(self, user_id: str, body_part: str, severity: str) -> bool:
-        """
-        Update the severity of a specific body part for a user.
-        """
+    def get_body_part_history(self, user_id: str, body_part: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """Get history of events for a specific body part."""
         if not self._initialized:
             raise RuntimeError("Neo4j not initialized")
         
         try:
-            from src.config.body_parts import get_severity_levels
-            
-            valid_severities = list(get_severity_levels().keys())
-            if severity not in valid_severities:
-                logger.warning(f"Invalid severity level: {severity}")
-                return False
-            
             hashed_user_id = self._hash_user_id(user_id)
             
             with self.driver.session() as session:
                 query = """
-                MATCH (p:Patient {patient_id: $patient_id})-[r:HAS_BODY_PART]->(b:BodyPart {name: $body_part})
-                SET r.severity = $severity,
-                    r.last_updated = $updated_at
-                RETURN count(r) as updated_count
+                MATCH (p:Patient {patient_id: $patient_id})-[:HAS_EVENT]->(e:Event)-[:AFFECTS]->(b:BodyPart {name: $body_part, patient_id: $patient_id})
+                RETURN e.event_id as id,
+                       e.title as title,
+                       e.description as description,
+                       e.timestamp as timestamp,
+                       e.severity as severity,
+                       e.event_type as type,
+                       e.confidence as confidence,
+                       e.source as source
+                ORDER BY e.timestamp DESC
+                LIMIT $limit
                 """
                 
                 result = session.run(query, {
                     "patient_id": hashed_user_id,
                     "body_part": body_part,
-                    "severity": severity,
-                    "updated_at": datetime.utcnow().isoformat()
+                    "limit": limit
                 })
                 
-                record = result.single()
-                updated_count = record["updated_count"] if record else 0
+                history = []
+                for record in result:
+                    history.append({
+                        "id": record["id"],
+                        "title": record["title"],
+                        "description": record["description"],
+                        "timestamp": record["timestamp"],
+                        "severity": record["severity"],
+                        "type": record["type"],
+                        "confidence": record["confidence"],
+                        "source": record["source"]
+                    })
                 
-                if updated_count > 0:
-                    logger.info(f"Updated severity for {body_part} to {severity}")
-                    return True
-                else:
-                    logger.warning(f"No body part relationship found for {body_part}")
-                    return False
+                return history
                 
         except Exception as e:
-            logger.error(f"Failed to update body part severity: {e}")
-            return False
+            logger.error(f"Failed to get body part history: {e}")
+            return []
     
-    def calculate_severity_from_events(self, user_id: str, body_part: str) -> str:
-        """
-        Calculate severity level based on events affecting a body part.
-        Enhanced rule-based approach with proper thresholds.
-        """
-        if not self._initialized:
-            raise RuntimeError("Neo4j not initialized")
-        
-        try:
-            hashed_user_id = self._hash_user_id(user_id)
-            
-            with self.driver.session() as session:
-                query = """
-                MATCH (p:Patient {patient_id: $patient_id})-[:HAS_EVENT]->(e:Event)-[:AFFECTS]->(b:BodyPart {name: $body_part})
-                WHERE e.timestamp >= datetime() - duration({days: 90})  // Last 90 days
-                RETURN e.severity as event_severity, 
-                       e.event_type as event_type,
-                       e.confidence as confidence,
-                       count(e) as event_count
-                ORDER BY e.timestamp DESC
-                """
-                
-                result = session.run(query, {
-                    "patient_id": hashed_user_id,
-                    "body_part": body_part
-                })
-                
-                events = list(result)
-                
-                if not events:
-                    return "NA"
-                
-                # Enhanced severity calculation with weighted scores
-                severity_weights = {
-                    "critical": 10,
-                    "severe": 7,
-                    "moderate": 4,
-                    "mild": 2,
-                    "normal": 1
-                }
-                
-                total_score = 0
-                total_events = 0
-                critical_count = 0
-                severe_count = 0
-                moderate_count = 0
-                recent_events = 0
-                
-                for event in events:
-                    severity = event.get("event_severity", "mild")
-                    confidence = event.get("confidence", 0.8)
-                    event_type = event.get("event_type", "general")
-                    
-                    # Weight by confidence and event type
-                    weight = severity_weights.get(severity, 2)
-                    confidence_multiplier = max(0.5, confidence)  # Minimum 50% confidence
-                    
-                    # Event type multipliers
-                    type_multiplier = 1.0
-                    if event_type in ["surgery", "emergency", "hospitalization"]:
-                        type_multiplier = 1.5
-                    elif event_type in ["medication", "treatment"]:
-                        type_multiplier = 1.2
-                    
-                    weighted_score = weight * confidence_multiplier * type_multiplier
-                    total_score += weighted_score
-                    total_events += 1
-                    
-                    # Count specific severities
-                    if severity == "critical":
-                        critical_count += 1
-                    elif severity == "severe":
-                        severe_count += 1
-                    elif severity == "moderate":
-                        moderate_count += 1
-                    
-                    recent_events += 1
-                
-                # Calculate average weighted score
-                if total_events == 0:
-                    return "NA"
-                
-                average_score = total_score / total_events
-                
-                # Determine overall severity with enhanced logic
-                if critical_count > 0 or average_score >= 8:
-                    return "critical"
-                elif severe_count > 0 or average_score >= 6:
-                    return "severe"
-                elif moderate_count > 1 or average_score >= 4:
-                    return "moderate"
-                elif total_events > 3 or average_score >= 2:
-                    return "mild"
-                elif total_events > 0:
-                    return "normal"
-                else:
-                    return "NA"
-                
-        except Exception as e:
-            logger.error(f"Failed to calculate severity from events: {e}")
-            return "NA"
+    # ...existing code...
     
-    def auto_update_body_part_severities(self, user_id: str) -> bool:
-        """
-        Automatically update all body part severities based on recent events.
-        This should be called after new events are added.
-        """
-        if not self._initialized:
-            raise RuntimeError("Neo4j not initialized")
-        
-        try:
-            from src.config.body_parts import get_default_body_parts
-            
-            body_parts = get_default_body_parts()
-            updated_count = 0
-            
-            for body_part in body_parts:
-                new_severity = self.calculate_severity_from_events(user_id, body_part)
-                if self.update_body_part_severity(user_id, body_part, new_severity):
-                    updated_count += 1
-            
-            logger.info(f"Auto-updated {updated_count} body part severities for user {user_id[:8]}...")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to auto-update body part severities: {e}")
-            return False
-        
 
 # Global Neo4j instance
 neo4j_db = Neo4jDB()

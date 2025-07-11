@@ -19,6 +19,7 @@ from src.api.endpoints import (
     tools,
     openai_compat,
     openai_compatible,
+    documents,
 )
 
 _ROUTERS = [
@@ -31,6 +32,7 @@ _ROUTERS = [
     tools,
     openai_compat,
     openai_compatible,
+    documents,
 ]
 
 

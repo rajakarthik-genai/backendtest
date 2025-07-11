@@ -1,0 +1,19 @@
+[Unit]
+Description=Meditwin Agents stack (tmux + Docker + ngrok)
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/home/%i/agents/meditwin-agents
+ExecStart=/home/%i/scripts/start_agents.sh
+Restart=on-failure
+RestartSec=5
+Environment=PATH=/home/%i/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+# Persist journal logs for later review
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

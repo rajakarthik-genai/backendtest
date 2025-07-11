@@ -11,3 +11,4 @@ from .events import router as events        # noqa: F401
 from .tools import router as tools          # noqa: F401
 from .openai_compat import router as openai_compat  # noqa: F401
 from .openai_compatible import router as openai_compatible  # noqa: F401
+from .documents import router as documents  # noqa: F401

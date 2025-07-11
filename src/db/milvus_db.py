@@ -390,6 +390,116 @@ class MilvusDB:
             logger.info("Milvus connection closed")
         except Exception as e:
             logger.error(f"Error closing Milvus connection: {e}")
+    
+    def insert_embeddings(self, entities: List[Dict[str, Any]], collection_name: str = None) -> Dict[str, Any]:
+        """Insert embeddings with metadata into Milvus."""
+        if not self._initialized:
+            raise RuntimeError("Milvus not initialized")
+        
+        try:
+            target_collection = collection_name or self.collection_name
+            
+            # Ensure collection exists
+            if not utility.has_collection(target_collection):
+                self._create_collection(target_collection)
+            
+            collection = Collection(target_collection)
+            
+            # Prepare data for insertion
+            ids = []
+            vectors = []
+            patient_ids = []
+            document_ids = []
+            sections = []
+            chunk_types = []
+            text_lengths = []
+            document_dates = []
+            embedding_models = []
+            embedded_ats = []
+            metadata_jsons = []
+            
+            for entity in entities:
+                ids.append(entity["id"])
+                vectors.append(entity["vector"])
+                patient_ids.append(entity.get("patient_id", ""))
+                document_ids.append(entity.get("document_id", ""))
+                sections.append(entity.get("section", ""))
+                chunk_types.append(entity.get("chunk_type", ""))
+                text_lengths.append(entity.get("text_length", 0))
+                document_dates.append(entity.get("document_date", ""))
+                embedding_models.append(entity.get("embedding_model", ""))
+                embedded_ats.append(entity.get("embedded_at", ""))
+                metadata_jsons.append(entity.get("metadata_json", "{}"))
+            
+            # Insert data
+            data = [
+                ids,
+                vectors,
+                patient_ids,
+                document_ids,
+                sections,
+                chunk_types,
+                text_lengths,
+                document_dates,
+                embedding_models,
+                embedded_ats,
+                metadata_jsons
+            ]
+            
+            insert_result = collection.insert(data)
+            collection.flush()
+            
+            logger.info(f"Inserted {len(entities)} embeddings into Milvus collection {target_collection}")
+            
+            return {
+                "success": True,
+                "inserted_count": len(entities),
+                "collection": target_collection,
+                "insert_ids": insert_result.primary_keys
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to insert embeddings into Milvus: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "inserted_count": 0
+            }
+    
+    def _create_collection(self, collection_name: str):
+        """Create a new collection with medical document schema."""
+        try:
+            # Define collection schema
+            fields = [
+                FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=False),
+                FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=1536),  # OpenAI embedding dimension
+                FieldSchema(name="patient_id", dtype=DataType.VARCHAR, max_length=255),
+                FieldSchema(name="document_id", dtype=DataType.VARCHAR, max_length=255),
+                FieldSchema(name="section", dtype=DataType.VARCHAR, max_length=100),
+                FieldSchema(name="chunk_type", dtype=DataType.VARCHAR, max_length=100),
+                FieldSchema(name="text_length", dtype=DataType.INT64),
+                FieldSchema(name="document_date", dtype=DataType.VARCHAR, max_length=50),
+                FieldSchema(name="embedding_model", dtype=DataType.VARCHAR, max_length=100),
+                FieldSchema(name="embedded_at", dtype=DataType.VARCHAR, max_length=50),
+                FieldSchema(name="metadata_json", dtype=DataType.VARCHAR, max_length=10000)
+            ]
+            
+            schema = CollectionSchema(fields, f"Medical documents collection: {collection_name}")
+            collection = Collection(collection_name, schema)
+            
+            # Create index for vector field
+            index_params = {
+                "metric_type": "IP",  # Inner Product for OpenAI embeddings
+                "index_type": "IVF_FLAT",
+                "params": {"nlist": 1024}
+            }
+            collection.create_index("vector", index_params)
+            
+            logger.info(f"Created Milvus collection: {collection_name}")
+            
+        except Exception as e:
+            logger.error(f"Failed to create Milvus collection {collection_name}: {e}")
+            raise
 
 
 # Global Milvus instance
