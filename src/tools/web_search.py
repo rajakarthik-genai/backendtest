@@ -1,53 +1,89 @@
 """
-Web search helper powered by OpenAI `gpt-4o-mini-search-preview`.
+Web search helper powered by OpenAI.
 
-The model has a built-in `search` tool. We send the user query, request the
-tool, and return the model’s answer (which already incorporates search results
-into its reply).
-
+Uses the standard OpenAI chat completion for medical information searches.
 Environment: requires OPENAI_API_KEY.
 """
 
 from __future__ import annotations
 
-import openai, json
-from src.config.settings import settings
-from src.utils.logging import logger
+import json
 
-openai.api_key = settings.openai_api_key
-_SEARCH_MODEL = "gpt-4o-mini-search-preview"
-
-
-def search(query: str, temperature: float = 0.0) -> str:
-    """
-    Perform an on-the-fly web search and return a concise answer string.
-
-    The model uses its internal search tool – no external API keys needed.
-    """
+# Safe import approach
+try:
+    from src.config.settings import settings
+    from src.utils.logging import logger
+    from openai import AsyncOpenAI
+    
+    # Initialize async OpenAI client with fallback
     try:
-        response = openai.ChatCompletion.create(
-            model=_SEARCH_MODEL,
+        client = AsyncOpenAI(api_key=settings.openai_api_key)
+    except Exception:
+        client = None
+        
+except ImportError as e:
+    # Fallback for when dependencies are not available
+    settings = None
+    logger = None
+    client = None
+    print(f"Warning: Could not import dependencies: {e}")
+
+
+async def search(query: str, temperature: float = 0.0) -> str:
+    """
+    Perform web search using OpenAI for medical information.
+    
+    Args:
+        query: Search query
+        temperature: Model temperature for response generation
+        
+    Returns:
+        Search results and summary
+    """
+    if not client or not settings:
+        return "Search unavailable: OpenAI client not initialized"
+        
+    try:
+        # Use the configured search model
+        response = await client.chat.completions.create(
+            model=settings.openai_model_search,
             messages=[
-                {"role": "user", "content": query}
+                {
+                    "role": "system", 
+                    "content": "You are a medical research assistant. Provide accurate, evidence-based medical information based on the user's query. Focus on current medical knowledge and best practices."
+                },
+                {
+                    "role": "user", 
+                    "content": f"Provide information about: {query}"
+                }
             ],
-            tools=[{"type": "search"}],   # instruct model that search tool is allowed
-            tool_choice="auto",           # let the model decide if search is required
             temperature=temperature,
+            max_tokens=1000
         )
-        # The assistant’s final answer is in the last choice message
-        msg = response.choices[-1].message
-        if msg.content:
-            return msg.content.strip()
-        # If the model instead returned a function_call result, parse content
-        if msg.function_call:
-            # The "search" function result is in msg.function_call.arguments
-            # but preview model typically embeds answer in a follow-up assistant
-            # For robustness, just dump the call info.
-            return f"Search result: {json.dumps(msg.function_call, indent=2)}"
-        return "No search result."
-    except Exception as exc:
-        logger.error("OpenAI search error: %s", exc)
-        return f"Search failed: {exc}"
+        
+        result = response.choices[0].message.content
+        if logger:
+            logger.info(f"Web search completed for query: {query[:50]}...")
+        return result
+        
+    except Exception as e:
+        error_msg = f"Web search failed for query '{query}': {e}"
+        if logger:
+            logger.error(error_msg)
+        return f"Search unavailable: {str(e)}"
+
+
+# Synchronous wrapper for backwards compatibility
+def search_sync(query: str, temperature: float = 0.0) -> str:
+    """Synchronous version of search function."""
+    import asyncio
+    try:
+        return asyncio.run(search(query, temperature))
+    except Exception as e:
+        error_msg = f"Sync web search failed: {e}"
+        if logger:
+            logger.error(error_msg)
+        return f"Search failed: {str(e)}"
 
 
 # Alias for backwards compatibility

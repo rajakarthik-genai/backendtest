@@ -6,9 +6,9 @@ and modular health tracking.
 
 from typing import List, Dict, Any
 
-# Complete list of 30 body parts for 3D model mapping
+# Complete list of body parts for 3D model mapping
 DEFAULT_BODY_PARTS = [
-    # Head and Neck (8 parts)
+    # Head and Neck (10 parts)
     "Head",
     "Brain", 
     "Left Eye",
@@ -16,6 +16,7 @@ DEFAULT_BODY_PARTS = [
     "Left Ear",
     "Right Ear",
     "Nose",
+    "Mouth",
     "Neck",
     
     # Torso (10 parts)
@@ -38,17 +39,25 @@ DEFAULT_BODY_PARTS = [
     "Left Hand",
     "Right Hand",
     
-    # Lower Body (6 parts)
+    # Lower Body (10 parts)
+    "Pelvis",
     "Left Hip",
     "Right Hip",
     "Left Leg",
     "Right Leg",
     "Left Knee",
-    "Right Knee"
+    "Right Knee",
+    "Left Foot",
+    "Right Foot",
+    
+    # General (2 parts)
+    "Left Ankle",
+    "Right Ankle",
+    "Skin"
 ]
 
-# Ensure we have exactly 30 body parts
-assert len(DEFAULT_BODY_PARTS) == 30, f"Expected 30 body parts, got {len(DEFAULT_BODY_PARTS)}"
+# Ensure we have the expected count of body parts
+assert len(DEFAULT_BODY_PARTS) == 37, f"Expected 37 body parts, got {len(DEFAULT_BODY_PARTS)}"
 
 # Severity levels for body parts
 SEVERITY_LEVELS = {

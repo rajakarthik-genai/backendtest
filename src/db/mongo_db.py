@@ -634,6 +634,128 @@ class MongoDB:
         if self.client:
             self.client.close()
             logger.info("MongoDB connection closed")
+    
+    async def list_user_ids(self) -> List[str]:
+        """List all user IDs that have data in MongoDB."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            # Get distinct user_ids from medical_records collection
+            user_ids = await self.db.medical_records.distinct("user_id", {})
+            logger.info(f"Found {len(user_ids)} users in MongoDB")
+            return user_ids
+            
+        except Exception as e:
+            logger.error(f"Failed to list user IDs: {e}")
+            return []
+
+    async def get_user_pii(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve PII data for a specific user."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            result = await self.db.user_pii.find_one({
+                "user_id": hashed_user_id
+            })
+            
+            if result:
+                # Remove MongoDB _id from result
+                result.pop("_id", None)
+                return result
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to get user PII: {e}")
+            return None
+
+    async def list_user_document_metadata(self, user_id: str) -> List[Dict[str, Any]]:
+        """List document metadata for a specific user."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            cursor = self.db.document_metadata.find({
+                "user_id": hashed_user_id
+            })
+            
+            documents = []
+            async for doc in cursor:
+                doc.pop("_id", None)  # Remove MongoDB _id
+                documents.append(doc)
+            
+            return documents
+            
+        except Exception as e:
+            logger.error(f"Failed to list user documents: {e}")
+            return []
+
+    async def delete_user_data(self, user_id: str) -> Dict[str, Any]:
+        """Delete all data for a specific user from MongoDB."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            deletion_results = {}
+            
+            # Delete from medical_records collection
+            medical_records_result = await self.db.medical_records.delete_many({
+                "user_id": hashed_user_id
+            })
+            deletion_results["medical_records"] = medical_records_result.deleted_count
+            
+            # Delete from timeline_events collection
+            timeline_events_result = await self.db.timeline_events.delete_many({
+                "user_id": hashed_user_id
+            })
+            deletion_results["timeline_events"] = timeline_events_result.deleted_count
+            
+            # Delete from document_metadata collection
+            document_metadata_result = await self.db.document_metadata.delete_many({
+                "user_id": hashed_user_id
+            })
+            deletion_results["document_metadata"] = document_metadata_result.deleted_count
+            
+            # Delete from user_pii collection
+            user_pii_result = await self.db.user_pii.delete_one({
+                "user_id": hashed_user_id
+            })
+            deletion_results["user_pii"] = user_pii_result.deleted_count
+            
+            # Delete from clinical_records collection if it exists
+            try:
+                clinical_records_result = await self.db.clinical_records.delete_many({
+                    "user_id": hashed_user_id
+                })
+                deletion_results["clinical_records"] = clinical_records_result.deleted_count
+            except Exception as e:
+                logger.warning(f"Could not delete from clinical_records: {e}")
+                deletion_results["clinical_records"] = 0
+            
+            total_deleted = sum(deletion_results.values())
+            
+            logger.info(f"Deleted MongoDB data for user {user_id[:8]}...: {deletion_results}")
+            
+            return {
+                "success": total_deleted > 0,
+                "total_deleted": total_deleted,
+                "breakdown": deletion_results
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to delete user data from MongoDB: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "total_deleted": 0,
+                "breakdown": {}
+            }
 
 
 # Global MongoDB instance

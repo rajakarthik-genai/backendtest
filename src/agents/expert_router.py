@@ -435,7 +435,7 @@ def get_handlers(role_names: List[str]):
             specialist = expert_router.specialists.get(specialty_type)
             if specialist:
                 # Create a wrapper for legacy compatibility
-                async def legacy_handler(user_id: str, question: str, spec=specialist):
+                async def legacy_handler(patient_id: str, question: str, spec=specialist):
                     opinion = await spec.get_opinion(user_id, question)
                     return opinion.primary_assessment
                 handlers.append(legacy_handler)
@@ -443,7 +443,7 @@ def get_handlers(role_names: List[str]):
             logger.warning(f"Unknown specialty: {role_name}")
             # Fallback to general physician
             specialist = expert_router.specialists[SpecialtyType.GENERAL]
-            async def fallback_handler(user_id: str, question: str, spec=specialist):
+            async def fallback_handler(patient_id: str, question: str, spec=specialist):
                 opinion = await spec.get_opinion(user_id, question)
                 return opinion.primary_assessment
             handlers.append(fallback_handler)

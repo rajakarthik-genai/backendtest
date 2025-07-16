@@ -1,297 +1,136 @@
-# MediTwin Digital Health Backend
+# MediTwin Agents
 
-A comprehensive multi-agent RAG (Retrieval-Augmented Generation) backend system for medical digital twins with HIPAA-compliant data handling.
+A multi-agent medical analysis system powered by AI specialists for comprehensive healthcare insights.
 
-## 🏗️ Architecture
+## Overview
 
-This system consists of two coordinated services:
+MediTwin Agents is an intelligent backend system that orchestrates multiple AI specialists to provide comprehensive medical analysis. The system includes specialized agents for different medical domains and provides secure, authenticated access to medical knowledge and analysis capabilities.
 
-1. **Login Service** (Port 8081) - User authentication and JWT token issuance with PostgreSQL
-2. **MediTwin Backend** (Port 8000) - Main API that validates JWT tokens and provides medical AI services with MongoDB, Neo4j, Milvus, Redis
+## Features
 
-## 🚀 Key Features
+- **Multi-Agent Architecture**: Specialized AI agents for different medical domains
+- **Secure Authentication**: JWT-based authentication with role-based access
+- **Medical Knowledge Base**: Advanced RAG system for medical information retrieval
+- **Timeline Analysis**: Automated medical history timeline generation
+- **Document Processing**: Upload and analysis of medical documents
+- **Analytics Dashboard**: Comprehensive analytics and insights
 
-- **Multi-Agent RAG**: CrewAI orchestrated specialist agents (GP, Cardiologist, Neurologist, Orthopedist)
-- **Real-time Streaming**: Server-Sent Events (SSE) for live chat responses
-- **HIPAA Compliance**: Encrypted PII, separate PHI storage, hashed patient IDs
-- **Multi-Modal Processing**: PDF → OCR → GPT-4V fallback pipeline
-- **Vector Search**: HuggingFace SentenceTransformers with OpenAI Ada fallback
-- **Knowledge Graph**: Neo4j for medical relationships and anatomy mapping
-- **Secure Authentication**: JWT tokens shared between services
-
-## 🛠️ Technology Stack
-
-### Backend Services
-- **FastAPI**: Async web framework
-- **CrewAI**: Multi-agent orchestration
-- **LangChain**: LLM workflow management
-
-### Databases
-- **PostgreSQL**: User authentication and profiles
-- **MongoDB**: Encrypted PII and medical records (PHI)
-- **Neo4j**: Medical knowledge graph
-- **Milvus**: Vector embeddings for semantic search
-- **Redis**: Caching and session management
-
-### AI/ML Components
-- **OpenAI GPT-4**: Multi-agent reasoning and web search
-- **SentenceTransformers**: Local embeddings (all-MiniLM-L6-v2)
-- **Tesseract OCR**: Scanned document processing
-- **PDFPlumber**: Text extraction from PDFs
-
-## 🧪 Testing
-
-This project includes a comprehensive testing suite:
-
-- **Comprehensive Test Suite**: `comprehensive_test_suite.py` - Full API endpoint testing
-- **Unit Tests**: `tests/unit/` - Individual component testing  
-- **Integration Tests**: `tests/integration/` - API integration testing
-
-See [TESTING.md](TESTING.md) for detailed testing instructions.
-
-### Quick Test
-
-```bash
-# Run comprehensive endpoint tests
-python comprehensive_test_suite.py
-
-# Run unit tests
-pytest tests/unit/ -v
-
-# Run all tests
-pytest tests/ -v
-```
-
-## 📁 Project Structure
-
-```
-/meditwin-agents/
-├── docker-compose.yml              # Orchestrates all services
-├── backend_RAG.dockerfile          # Main API container
-├── .env                            # Environment variables
-├── requirements.txt                # Python dependencies
-├── src/                            # Main application code
-├── tests/                          # Test suite
-│   ├── unit/                       # Unit tests
-│   ├── integration/                # Integration tests
-│   ├── data/                       # Test data files
-│   └── test_production_suite.py    # Production test suite
-├── docs/                           # Documentation
-│   ├── API_DOCUMENTATION.md        # API reference
-│   ├── AUTHENTICATION.md           # Auth guide
-│   ├── DEVELOPMENT.md              # Development guide
-│   ├── COMPREHENSIVE_TEST_REPORT.md # Test results
-│   ├── RAG_TESTING_REPORT.md       # RAG pipeline report
-│   └── IMPLEMENTATION_COMPLETE.md  # Implementation status
-├── neo4j/                          # Neo4j database files
-└── start.sh                       # Application startup script
-│   ├── main.py                     # FastAPI entrypoint
-│   ├── config/settings.py          # Configuration management
-│   ├── api/endpoints/              # REST API routes
-│   ├── agents/                     # CrewAI specialist agents
-│   ├── chat/                       # Memory management (STM/LTM)
-│   ├── db/                         # Database clients
-│   ├── tools/                      # PDF, vector, graph tools
-│   ├── utils/                      # Encryption, logging utilities
-│   └── prompts/                    # Agent prompt templates
-└── neo4j/                          # Neo4j configuration
-```
-
-## 🔒 Security & HIPAA Compliance
-
-### Data Separation
-- **PII Collection**: Encrypted patient identities (name, email, address)
-- **PHI Collection**: De-identified medical records linked by hashed patient_id
-- **Knowledge Graph**: General medical knowledge (no patient data)
-
-### Encryption
-- **Patient IDs**: HMAC-SHA256 hashed identifiers
-- **PII Fields**: AES-256 field-level encryption
-- **Transport**: TLS for all service communication
-- **At Rest**: MongoDB WiredTiger encryption
-
-### Authentication
-- **JWT Tokens**: Shared secret between login and main services
-- **OAuth2**: Google SSO integration
-- **Role-based Access**: Admin vs patient permissions
-
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
-- Docker & Docker Compose
-- OpenAI API key
-- 8GB+ RAM (for all services)
 
-### Environment Setup
+- Python 3.10+
+- Docker (optional)
+- MongoDB, Redis, Milvus, Neo4j databases
 
-1. **Clone and configure**:
+### Installation
+
+1. Clone the repository:
 ```bash
-cd /home/user/agents/meditwin-agents
+git clone <repository-url>
+cd meditwin-agents
+```
+
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+3. Set up environment variables:
+```bash
 cp .env.example .env
-# Edit .env with your API keys and passwords
+# Edit .env with your configuration
 ```
 
-2. **Start all services**:
+4. Run the application:
 ```bash
-docker-compose up -d
+python src/main.py
 ```
 
-3. **Verify deployment**:
+## Project Structure
+
+```
+├── src/                    # Source code
+│   ├── agents/            # AI agent implementations
+│   ├── api/               # REST API endpoints
+│   ├── auth/              # Authentication system
+│   ├── chat/              # Chat and conversation handling
+│   ├── config/            # Configuration management
+│   ├── db/                # Database connections
+│   ├── memory/            # Memory management
+│   └── utils/             # Utility functions
+├── tests/                 # Test suite
+│   ├── unit/              # Unit tests
+│   └── integration/       # Integration tests
+├── docs/                  # Documentation
+├── deployment/            # Deployment configurations
+└── scripts/               # Utility scripts
+```
+
+## Documentation
+
+- [API Reference](docs/API_REFERENCE.md) - Complete API documentation
+- [API Purpose & Architecture](docs/API_PURPOSE.md) - System architecture and design
+- [Development Guide](docs/DEVELOPMENT.md) - Development setup and guidelines
+- [Deployment Guide](docs/DEPLOYMENT.md) - Production deployment instructions
+- [Testing Guide](docs/TESTING.md) - Testing strategies and guidelines
+
+## API Endpoints
+
+The system provides RESTful APIs for:
+
+- **Authentication**: User login and JWT token management
+- **Chat**: Interactive conversations with AI specialists
+- **Medical Analysis**: Comprehensive medical analysis and insights
+- **Document Upload**: Medical document processing and analysis
+- **Knowledge Base**: Medical information retrieval
+- **Timeline**: Medical history timeline generation
+- **Analytics**: System analytics and insights
+- **Admin**: Administrative functions and system management
+
+See [API Reference](docs/API_REFERENCE.md) for detailed endpoint documentation.
+
+## Testing
+
+Run the test suite:
+
 ```bash
-# Check service health
-curl http://localhost:8000/health
-curl http://localhost:8081/health
+# All tests
+pytest
 
-# View logs
-docker-compose logs -f backend
+# Unit tests only
+pytest tests/unit/
+
+# Integration tests only
+pytest tests/integration/
+
+# Endpoint tests
+pytest tests/test_all_endpoints.py
 ```
 
-### API Endpoints
+## Deployment
 
-#### Authentication (External Login Service - Port 8081)
-- `POST /auth/signup` - User registration
-- `POST /auth/login` - Email/password login
-- `GET /auth/google` - Google OAuth login
-- `GET /users/me` - Current user profile
+Multiple deployment options are available:
 
-#### MediTwin API (Port 8000)
-**Note: All endpoints require JWT tokens from the login service**
-- `POST /upload` - Upload medical documents
-- `POST /chat/stream` - Real-time chat with agents (SSE)
-- `POST /chat/expert_opinion` - Multi-specialist consultation
-- `GET /timeline` - Patient medical timeline
-- `GET /anatomy` - Body part analysis from graph
-- `POST /events` - Manual event creation
+- **Docker**: Use the provided Docker configuration
+- **Systemd**: Use the provided service files
+- **Manual**: Follow the deployment guide
 
-## 🤖 Multi-Agent System
+See [Deployment Guide](docs/DEPLOYMENT.md) for detailed instructions.
 
-### Specialist Agents
-- **General Physician**: Primary care and general health
-- **Cardiologist**: Heart and cardiovascular conditions
-- **Neurologist**: Brain and nervous system
-- **Orthopedist**: Bones, joints, and musculoskeletal
+## Contributing
 
-### Agent Workflow
-1. **Router**: Keywords-based specialist selection
-2. **Orchestrator**: Coordinates multiple agents
-3. **Aggregator**: Combines specialist responses
-4. **Streaming**: Real-time answer delivery via SSE
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests for new functionality
+5. Ensure all tests pass
+6. Submit a pull request
 
-## 📊 Data Processing Pipeline
+## License
 
-### Document Ingestion
-1. **PDF Upload** → Text extraction (PDFPlumber)
-2. **OCR Fallback** → Tesseract for scanned documents  
-3. **Vision Fallback** → GPT-4V for complex images
-4. **Structured Parsing** → Extract conditions, medications, labs
-5. **Multi-DB Storage** → MongoDB (records) + Neo4j (relationships) + Milvus (vectors)
+[Add your license information here]
 
-### Chat Processing
-1. **Authentication** → JWT token verification
-2. **Agent Selection** → Route to relevant specialists
-3. **Context Retrieval** → Query patient history and knowledge
-4. **LLM Reasoning** → Generate specialist responses
-5. **Response Streaming** → Real-time delivery to client
+## Support
 
-## 🔍 Example Usage
-
-### Upload Medical Record
-```bash
-curl -X POST http://localhost:8000/upload \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -F "file=@medical_report.pdf"
-```
-
-### Stream Chat Response
-```javascript
-const eventSource = new EventSource('/chat/stream', {
-  headers: { 'Authorization': 'Bearer ' + token }
-});
-
-eventSource.onmessage = function(event) {
-  console.log('AI Response:', event.data);
-};
-```
-
-### Get Medical Timeline
-```bash
-curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  "http://localhost:8000/timeline?user_id=patient123"
-```
-
-## 🧪 Testing
-
-### Unit Tests
-```bash
-docker-compose exec backend pytest tests/
-```
-
-### Integration Tests
-```bash
-# Test complete upload → chat flow
-python tests/test_integration.py
-```
-
-### Sample Medical Records
-The `tests/samples/` directory contains anonymized medical reports for testing the ingestion pipeline.
-
-## 📝 Development
-
-### Adding New Agents
-1. Create prompt template in `src/prompts/`
-2. Add agent class in `src/agents/`
-3. Update router keywords in `expert_router.py`
-
-### Extending Database Schema
-1. Update MongoDB collections in `db/mongo_db.py`
-2. Add Neo4j node types in `db/neo4j_db.py`
-3. Configure new Milvus collections in `db/milvus_db.py`
-
-## 🚨 Production Considerations
-
-### Scaling
-- Use multiple FastAPI workers (Gunicorn)
-- Implement Redis clustering for session data
-- Consider MongoDB sharding for large datasets
-- Use Neo4j Enterprise for high availability
-
-### Monitoring
-- Set up Prometheus metrics collection
-- Configure log aggregation (ELK stack)
-- Monitor database performance and connections
-- Track AI token usage and costs
-
-### Security
-- Regular security audits and penetration testing
-- Rotate encryption keys and JWT secrets
-- Monitor for unusual access patterns
-- Implement rate limiting and DDoS protection
-
-## 📞 Support
-
-For questions or issues:
-1. Check the logs: `docker-compose logs -f`
-2. Verify environment variables in `.env`
-3. Ensure all services are healthy: `docker-compose ps`
-4. Review the API documentation at `http://localhost:8000/docs`
-
-## 🔄 Updates & Maintenance
-
-### Database Migrations
-```bash
-# MongoDB migrations
-python scripts/migrate_mongo.py
-
-# Neo4j schema updates  
-python scripts/update_neo4j_schema.py
-```
-
-### Backup Procedures
-```bash
-# Automated backup script
-./scripts/backup_all_databases.sh
-```
-
----
-
-**Built with ❤️ for secure, intelligent healthcare**
+For questions and support, please [create an issue](../../issues) or contact the development team.

@@ -20,7 +20,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import agentops
 from src.config.settings import settings
-from src.api import attach_routers
+from src.api.router import main_router
 from src.utils.logging import logger
 from src.db.mongo_db import init_mongo
 from src.db.neo4j_db import init_graph
@@ -110,8 +110,8 @@ app.add_middleware(JWTAuthMiddleware, require_auth=jwt_require_auth)
 # Add user initialization middleware (after auth middleware)
 app.add_middleware(UserInitializationMiddleware)
 
-# Attach API routers
-attach_routers(app)
+# Attach main API router
+app.include_router(main_router)
 
 
 @app.on_event("startup")

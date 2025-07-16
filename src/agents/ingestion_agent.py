@@ -39,7 +39,7 @@ class IngestionAgent:
     
     async def process_document(
         self,
-        user_id: str,
+        patient_id: str,
         document_id: str,
         file_path: str,
         metadata: Dict[str, Any]
@@ -48,7 +48,7 @@ class IngestionAgent:
         Process a document through the complete ingestion pipeline.
         
         Args:
-            user_id: User identifier
+            patient_id: User identifier
             document_id: Document identifier
             file_path: Path to the uploaded file
             metadata: Document metadata
@@ -76,21 +76,21 @@ class IngestionAgent:
             entities = await self._extract_medical_entities(extracted_text)
             
             # Step 2.5: Extract lifestyle factors for long-term memory
-            await self._extract_and_store_lifestyle_factors(user_id, extracted_text, entities)
+            await self._extract_and_store_lifestyle_factors(patient_id, extracted_text, entities)
             
             # Step 3: Store in MongoDB
             mongo_result = await self._store_in_mongodb(
-                user_id, document_id, extracted_text, entities, metadata
+                patient_id, document_id, extracted_text, entities, metadata
             )
             
             # Step 4: Create knowledge graph relationships
-            await self._store_in_neo4j(user_id, document_id, entities)
+            await self._store_in_neo4j(patient_id, document_id, entities)
             
             # Step 5: Generate and store embeddings
-            await self._store_embeddings(user_id, document_id, extracted_text, entities)
+            await self._store_embeddings(patient_id, document_id, extracted_text, entities)
             
             log_user_action(
-                user_id,
+                patient_id,
                 "document_processed",
                 {
                     "document_id": document_id,
@@ -373,7 +373,7 @@ Return a JSON object with an array of medical events following the specified sch
     
     async def _store_in_mongodb(
         self,
-        user_id: str,
+        patient_id: str,
         document_id: str,
         text: str,
         entities: List[Dict[str, Any]],
@@ -392,7 +392,7 @@ Return a JSON object with an array of medical events following the specified sch
             }
             
             record_id = await mongo_client.store_medical_record(
-                user_id=user_id,
+                patient_id=patient_id,
                 record_data=record_data,
                 record_type="document"
             )
@@ -405,7 +405,7 @@ Return a JSON object with an array of medical events following the specified sch
     
     async def _store_in_neo4j(
         self,
-        user_id: str,
+        patient_id: str,
         document_id: str,
         entities: List[Dict[str, Any]]
     ):
@@ -420,13 +420,13 @@ Return a JSON object with an array of medical events following the specified sch
             for entity in entities:
                 # Handle LLM-extracted medical events
                 if entity.get("extraction_method") == "llm_structured_output":
-                    await self._create_llm_medical_event(neo4j_client, user_id, document_id, entity)
+                    await self._create_llm_medical_event(neo4j_client, patient_id, document_id, entity)
                 else:
                     # Handle fallback keyword-extracted entities
-                    await self._create_fallback_medical_event(neo4j_client, user_id, document_id, entity)
+                    await self._create_fallback_medical_event(neo4j_client, patient_id, document_id, entity)
             
             # Enhanced severity update using LLM assessment
-            await self._enhanced_severity_update(user_id, entities)
+            await self._enhanced_severity_update(patient_id, entities)
             
             logger.info(f"Neo4j storage completed for document {document_id}: {len(entities)} entities processed")
             
@@ -437,7 +437,7 @@ Return a JSON object with an array of medical events following the specified sch
     async def _create_llm_medical_event(
         self,
         neo4j_client,
-        user_id: str,
+        patient_id: str,
         document_id: str,
         entity: Dict[str, Any]
     ):
@@ -480,7 +480,7 @@ Return a JSON object with an array of medical events following the specified sch
             
             # Create the medical event in Neo4j
             event_id = neo4j_client.create_medical_event(
-                user_id=user_id,
+                patient_id=patient_id,
                 event_data=event_data,
                 body_parts=[entity.get("body_part")] if entity.get("body_part") else []
             )
@@ -493,7 +493,7 @@ Return a JSON object with an array of medical events following the specified sch
     async def _create_fallback_medical_event(
         self,
         neo4j_client,
-        user_id: str,
+        patient_id: str,
         document_id: str,
         entity: Dict[str, Any]
     ):
@@ -523,7 +523,7 @@ Return a JSON object with an array of medical events following the specified sch
             
             # Create the medical event in Neo4j
             event_id = neo4j_client.create_medical_event(
-                user_id=user_id,
+                patient_id=patient_id,
                 event_data=event_data,
                 body_parts=body_parts
             )
@@ -579,7 +579,7 @@ Return a JSON object with an array of medical events following the specified sch
     
     async def _store_embeddings(
         self,
-        user_id: str,
+        patient_id: str,
         document_id: str,
         text: str,
         entities: List[Dict[str, Any]] = None
@@ -592,7 +592,7 @@ Return a JSON object with an array of medical events following the specified sch
             chunks = self._split_text_into_chunks(text, max_length=500)
             if chunks:
                 milvus_client.store_document_embeddings(
-                    user_id=user_id,
+                    patient_id=patient_id,
                     document_id=document_id,
                     text_chunks=chunks,
                     metadata={"source": "document_processing"}
@@ -606,7 +606,7 @@ Return a JSON object with an array of medical events following the specified sch
                         event_text = self._create_event_embedding_text(entity)
                         if event_text:
                             milvus_client.store_document_embeddings(
-                                user_id=user_id,
+                                patient_id=patient_id,
                                 document_id=f"{document_id}_{entity.get('event_id', 'unknown')}",
                                 text_chunks=[event_text],
                                 metadata={
@@ -683,7 +683,7 @@ Return a JSON object with an array of medical events following the specified sch
     
     async def _extract_and_store_lifestyle_factors(
         self,
-        user_id: str,
+        patient_id: str,
         text: str,
         entities: List[Dict[str, Any]]
     ):
@@ -766,7 +766,7 @@ Return a JSON object with an array of medical events following the specified sch
                     
                     update_data["medical_history"] = existing_history
                 
-                await ltm.update(user_id, update_data)
+                await ltm.update(patient_id, update_data)
                 logger.info(f"Updated long-term memory for user {user_id}: {len(lifestyle_updates)} lifestyle factors, {len(chronic_conditions)} chronic conditions")
         
         except Exception as e:
@@ -775,7 +775,7 @@ Return a JSON object with an array of medical events following the specified sch
 
     async def _llm_assess_body_part_severity(
         self,
-        user_id: str,
+        patient_id: str,
         body_part: str,
         events: List[Dict[str, Any]]
     ) -> str:
@@ -911,7 +911,7 @@ Respond with only one word: normal, mild, moderate, severe, or critical"""
             logger.error(f"LLM severity assessment failed for '{description}': {e}")
             return "moderate"  # Default fallback
     
-    async def _enhanced_severity_update(self, user_id: str, entities: List[Dict[str, Any]]):
+    async def _enhanced_severity_update(self, patient_id: str, entities: List[Dict[str, Any]]):
         """
         Enhanced severity update using LLM assessment in addition to rule-based calculation.
         """
@@ -934,7 +934,7 @@ Respond with only one word: normal, mild, moderate, severe, or critical"""
                     
                     if recent_events:
                         # Try LLM assessment first
-                        llm_severity = await self._llm_assess_body_part_severity(user_id, body_part, recent_events)
+                        llm_severity = await self._llm_assess_body_part_severity(patient_id, body_part, recent_events)
                         
                         if llm_severity:
                             # Use LLM assessment

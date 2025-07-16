@@ -500,6 +500,28 @@ class MilvusDB:
         except Exception as e:
             logger.error(f"Failed to create Milvus collection {collection_name}: {e}")
             raise
+    
+    def list_user_ids(self) -> List[str]:
+        """List all user IDs that have data in Milvus."""
+        if not self._initialized:
+            raise RuntimeError("Milvus not initialized")
+        
+        try:
+            # Query all entities to get user_id_hash values
+            results = self.collection.query(
+                expr="id >= 0",  # Match all records
+                output_fields=["user_id_hash"],
+                limit=10000  # Adjust limit as needed
+            )
+            
+            # Extract unique user IDs
+            user_ids = list(set(result["user_id_hash"] for result in results))
+            logger.info(f"Found {len(user_ids)} users in Milvus")
+            return user_ids
+            
+        except Exception as e:
+            logger.error(f"Failed to list user IDs from Milvus: {e}")
+            return []
 
 
 # Global Milvus instance

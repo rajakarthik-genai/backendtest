@@ -49,7 +49,7 @@ class MedicalDocumentCrew:
     
     async def process_document(
         self,
-        user_id: str,
+        patient_id: str,
         document_id: str,
         file_path: str,
         metadata: Optional[Dict[str, Any]] = None
@@ -58,7 +58,7 @@ class MedicalDocumentCrew:
         Process a medical document through the complete pipeline.
         
         Args:
-            user_id: Patient identifier for data isolation
+            patient_id: HIPAA-compliant patient identifier for data isolation
             document_id: Unique document identifier
             file_path: Path to the PDF file
             metadata: Additional document metadata
@@ -67,12 +67,12 @@ class MedicalDocumentCrew:
             Complete processing results with success status and details
         """
         try:
-            logger.info(f"Starting medical document processing: {document_id} for patient {user_id}")
+            logger.info(f"Starting medical document processing: {document_id} for patient {patient_id}")
             
             processing_start = datetime.utcnow()
             results = {
                 "document_id": document_id,
-                "patient_id": user_id,
+                "patient_id": patient_id,
                 "processing_start": processing_start.isoformat(),
                 "stages": {},
                 "success": False,
@@ -103,8 +103,9 @@ class MedicalDocumentCrew:
             try:
                 clinical_extraction_result = self.clinical_extractor.extract_clinical_data(
                     extracted_text_data, document_id
-                )\n                results["stages"]["clinical_extraction"] = clinical_extraction_result
-                
+                )
+                results["stages"]["clinical_extraction"] = clinical_extraction_result
+
                 if not clinical_extraction_result["success"]:
                     results["error"] = f"Clinical extraction failed: {clinical_extraction_result['error']}"
                     return results
@@ -189,7 +190,7 @@ class MedicalDocumentCrew:
             logger.error(f"Medical document processing failed: {e}")
             return {
                 "document_id": document_id,
-                "patient_id": user_id,
+                "patient_id": patient_id,
                 "success": False,
                 "error": str(e),
                 "processing_start": datetime.utcnow().isoformat(),
@@ -198,7 +199,7 @@ class MedicalDocumentCrew:
     
     def process_document_sync(
         self,
-        user_id: str,
+        patient_id: str,
         document_id: str,
         file_path: str,
         metadata: Optional[Dict[str, Any]] = None
@@ -207,7 +208,7 @@ class MedicalDocumentCrew:
         Synchronous version of document processing.
         
         Args:
-            user_id: Patient identifier for data isolation
+            patient_id: Patient identifier for data isolation
             document_id: Unique document identifier
             file_path: Path to the PDF file
             metadata: Additional document metadata
@@ -225,7 +226,7 @@ class MedicalDocumentCrew:
             asyncio.set_event_loop(loop)
         
         return loop.run_until_complete(
-            self.process_document(user_id, document_id, file_path, metadata)
+            self.process_document(patient_id, document_id, file_path, metadata)
         )
     
     def get_processing_status(self, document_id: str) -> Dict[str, Any]:
@@ -296,7 +297,7 @@ class MedicalDocumentCrew:
 
 # Convenience function for single document processing
 def process_medical_document(
-    user_id: str,
+    patient_id: str,
     document_id: str,
     file_path: str,
     metadata: Optional[Dict[str, Any]] = None
@@ -305,7 +306,7 @@ def process_medical_document(
     Convenience function to process a single medical document.
     
     Args:
-        user_id: Patient identifier for data isolation
+        patient_id: Patient identifier for data isolation
         document_id: Unique document identifier
         file_path: Path to the PDF file
         metadata: Additional document metadata
@@ -314,12 +315,12 @@ def process_medical_document(
         Complete processing results
     """
     crew = MedicalDocumentCrew()
-    return crew.process_document_sync(user_id, document_id, file_path, metadata)
+    return crew.process_document_sync(patient_id, document_id, file_path, metadata)
 
 
 # Convenience function for batch processing
 def process_medical_documents_batch(
-    user_id: str,
+    patient_id: str,
     documents: List[Dict[str, str]],
     max_concurrent: int = 3
 ) -> List[Dict[str, Any]]:
@@ -327,7 +328,7 @@ def process_medical_documents_batch(
     Process multiple medical documents in batch.
     
     Args:
-        user_id: Patient identifier for data isolation
+        patient_id: Patient identifier for data isolation
         documents: List of document info dicts with 'document_id' and 'file_path'
         max_concurrent: Maximum number of concurrent processing tasks
         
@@ -342,7 +343,7 @@ def process_medical_documents_batch(
     
     def process_single(doc_info):
         return crew.process_document_sync(
-            user_id,
+            patient_id,
             doc_info["document_id"],
             doc_info["file_path"],
             doc_info.get("metadata")

@@ -639,8 +639,8 @@ class Neo4jDB:
             logger.error(f"Failed to get body part severities: {e}")
             return {}
     
-    def get_body_part_history(self, user_id: str, body_part: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """Get history of events for a specific body part."""
+    def update_body_part_severity(self, user_id: str, body_part: str, severity: str) -> bool:
+        """Update severity for a specific body part."""
         if not self._initialized:
             raise RuntimeError("Neo4j not initialized")
         
@@ -649,44 +649,125 @@ class Neo4jDB:
             
             with self.driver.session() as session:
                 query = """
-                MATCH (p:Patient {patient_id: $patient_id})-[:HAS_EVENT]->(e:Event)-[:AFFECTS]->(b:BodyPart {name: $body_part, patient_id: $patient_id})
-                RETURN e.event_id as id,
-                       e.title as title,
-                       e.description as description,
-                       e.timestamp as timestamp,
-                       e.severity as severity,
-                       e.event_type as type,
-                       e.confidence as confidence,
-                       e.source as source
-                ORDER BY e.timestamp DESC
-                LIMIT $limit
+                MATCH (p:Patient {patient_id: $patient_id})-[r:HAS_BODY_PART]->(b:BodyPart {name: $body_part, patient_id: $patient_id})
+                SET r.severity = $severity, r.last_updated = $updated_at
+                RETURN r
                 """
                 
                 result = session.run(query, {
                     "patient_id": hashed_user_id,
                     "body_part": body_part,
-                    "limit": limit
+                    "severity": severity,
+                    "updated_at": datetime.utcnow().isoformat()
                 })
                 
-                history = []
-                for record in result:
-                    history.append({
-                        "id": record["id"],
-                        "title": record["title"],
-                        "description": record["description"],
-                        "timestamp": record["timestamp"],
-                        "severity": record["severity"],
-                        "type": record["type"],
-                        "confidence": record["confidence"],
-                        "source": record["source"]
-                    })
-                
-                return history
+                # Check if update was successful
+                return bool(result.single())
                 
         except Exception as e:
-            logger.error(f"Failed to get body part history: {e}")
+            logger.error(f"Failed to update severity for {body_part}: {e}")
+            return False
+
+    def calculate_severity_from_events(self, user_id: str, body_part: str) -> str:
+        """Calculate severity level for a body part based on recent events."""
+        if not self._initialized:
+            raise RuntimeError("Neo4j not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            with self.driver.session() as session:
+                # Get recent events for this body part
+                query = """
+                MATCH (p:Patient {patient_id: $patient_id})-[:HAS_EVENT]->(e:Event)-[:AFFECTS]->(b:BodyPart {name: $body_part, patient_id: $patient_id})
+                WHERE e.timestamp > date() - duration('P30D')  // Last 30 days
+                RETURN e.severity as severity, e.timestamp as timestamp
+                ORDER BY e.timestamp DESC
+                LIMIT 10
+                """
+                
+                result = session.run(query, {
+                    "patient_id": hashed_user_id,
+                    "body_part": body_part
+                })
+                
+                events = list(result)
+                
+                if not events:
+                    return "normal"
+                
+                # Simple severity calculation based on most recent and most severe events
+                severities = [record["severity"] for record in events if record["severity"]]
+                
+                # Severity hierarchy
+                severity_weights = {
+                    "critical": 5,
+                    "severe": 4,
+                    "moderate": 3,
+                    "mild": 2,
+                    "normal": 1
+                }
+                
+                # Get the highest severity from recent events
+                max_weight = 1
+                for severity in severities:
+                    weight = severity_weights.get(severity.lower(), 1)
+                    max_weight = max(max_weight, weight)
+                
+                # Map back to severity level
+                for severity, weight in severity_weights.items():
+                    if weight == max_weight:
+                        return severity
+                
+                return "normal"
+                
+        except Exception as e:
+            logger.error(f"Failed to calculate severity for {body_part}: {e}")
+            return "normal"
+
+    def list_patient_ids(self) -> List[str]:
+        """List all patient IDs in the Neo4j database."""
+        if not self._initialized:
+            raise RuntimeError("Neo4j not initialized")
+        
+        try:
+            with self.driver.session() as session:
+                query = "MATCH (p:Patient) RETURN p.patient_id AS patient_id"
+                result = session.run(query)
+                return [record["patient_id"] for record in result]
+                
+        except Exception as e:
+            logger.error(f"Failed to list patient IDs: {e}")
             return []
-    
+
+    def delete_user_data(self, user_id: str) -> bool:
+        """Delete all data for a specific user from Neo4j."""
+        if not self._initialized:
+            raise RuntimeError("Neo4j not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            with self.driver.session() as session:
+                # Delete the patient node and all connected nodes/relationships
+                query = """
+                MATCH (p:Patient {patient_id: $patient_id})
+                OPTIONAL MATCH (p)-[*]-(connected)
+                DETACH DELETE p, connected
+                RETURN count(p) as deleted_count
+                """
+                
+                result = session.run(query, {"patient_id": hashed_user_id})
+                record = result.single()
+                deleted_count = record["deleted_count"] if record else 0
+                
+                logger.info(f"Deleted Neo4j data for user {user_id[:8]}... (patient nodes: {deleted_count})")
+                return deleted_count > 0
+                
+        except Exception as e:
+            logger.error(f"Failed to delete user data from Neo4j: {e}")
+            return False
+
     # ...existing code...
     
 

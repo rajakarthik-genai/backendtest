@@ -157,12 +157,12 @@ class BaseSpecialist(ABC):
             }
         ]
     
-    async def _execute_tool(self, user_id: str, tool_name: str, arguments: Dict[str, Any]) -> str:
+    async def _execute_tool(self, patient_id: str, tool_name: str, arguments: Dict[str, Any]) -> str:
         """
         Execute a tool call and return the result.
         
         Args:
-            user_id: User identifier for context
+            patient_id: User identifier for context
             tool_name: Name of the tool to execute
             arguments: Tool arguments
             
@@ -174,15 +174,15 @@ class BaseSpecialist(ABC):
                 return await self._web_search(arguments["query"])
             
             elif tool_name == "query_vector_db":
-                return await self._vector_search(arguments.get("query", ""), user_id)
+                return await self._vector_search(arguments.get("query", ""), patient_id)
             
             elif tool_name == "query_knowledge_graph":
-                return await self._knowledge_graph_query(arguments.get("query", ""), user_id)
+                return await self._knowledge_graph_query(arguments.get("query", ""), patient_id)
             
             elif tool_name == "get_patient_records":
                 mongo_client = await get_mongo()
                 records = await mongo_client.get_medical_records(
-                    user_id,
+                    patient_id,
                     record_type=arguments["record_type"],
                     limit=arguments.get("limit", 10)
                 )
@@ -197,7 +197,7 @@ class BaseSpecialist(ABC):
     
     async def get_opinion(
         self,
-        user_id: str,
+        patient_id: str,
         question: str,
         context: Optional[Dict] = None
     ) -> SpecialistOpinion:
@@ -205,7 +205,7 @@ class BaseSpecialist(ABC):
         Get a structured medical opinion from the specialist.
         
         Args:
-            user_id: User identifier
+            patient_id: User identifier
             question: Medical question or case description
             context: Additional context (medical history, etc.)
             
@@ -243,7 +243,7 @@ class BaseSpecialist(ABC):
                     start_time = time.time()
                     
                     result = await self._execute_tool(
-                        user_id,
+                        patient_id,
                         tool_call.function.name,
                         json.loads(tool_call.function.arguments)
                     )
@@ -303,7 +303,7 @@ class BaseSpecialist(ABC):
     
     async def stream_opinion(
         self,
-        user_id: str,
+        patient_id: str,
         question: str,
         context: Optional[Dict] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
@@ -311,7 +311,7 @@ class BaseSpecialist(ABC):
         Stream a medical opinion as it's being generated.
         
         Args:
-            user_id: User identifier
+            patient_id: User identifier
             question: Medical question or case description
             context: Additional context
             
@@ -507,12 +507,12 @@ class BaseSpecialist(ABC):
             logger.error(f"Web search failed: {e}")
             return f"Web search unavailable: {str(e)}"
     
-    async def _vector_search(self, query: str, user_id: str) -> str:
+    async def _vector_search(self, query: str, patient_id: str) -> str:
         """Search vector database for similar content."""
         try:
             milvus_client = get_vector_store()
             results = milvus_client.search_similar_documents(
-                user_id=user_id,
+                patient_id=patient_id,
                 query_text=query,
                 limit=5,
                 score_threshold=0.7
@@ -534,13 +534,13 @@ class BaseSpecialist(ABC):
             logger.error(f"Vector search failed: {e}")
             return f"Vector search unavailable: {str(e)}"
     
-    async def _knowledge_graph_query(self, query: str, user_id: str) -> str:
+    async def _knowledge_graph_query(self, query: str, patient_id: str) -> str:
         """Query the knowledge graph for patient information with enhanced medical event support."""
         try:
             graph_db = get_graph()
             
             # Ensure user is initialized
-            graph_db.ensure_user_initialized(user_id)
+            graph_db.ensure_user_initialized(patient_id)
             
             # Enhanced query processing - look for body part mentions
             from src.config.body_parts import identify_body_parts_from_text
@@ -596,7 +596,7 @@ class BaseSpecialist(ABC):
             logger.error(f"Knowledge graph query failed: {e}")
             return f"Knowledge graph unavailable: {str(e)}"
     
-    async def _document_search(self, query: str, user_id: str) -> str:
+    async def _document_search(self, query: str, patient_id: str) -> str:
         """Search patient documents and records."""
         try:
             mongo_client = await get_mongo()

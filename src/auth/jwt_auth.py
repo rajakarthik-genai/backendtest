@@ -2,8 +2,8 @@
 JWT token validation utilities for the MediTwin backend.
 
 This module handles JWT token verification and user extraction from tokens
-issued by the external login service. It does NOT handle user registration,
-login, or password management - those are handled by the separate login service.
+issued by the external login service. It converts user_id to HIPAA-compliant
+patient_id for all medical data operations.
 """
 
 import jwt
@@ -14,6 +14,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from src.config.settings import settings
 from src.utils.logging import logger
+from src.utils.patient_id import get_patient_id_from_user_id
 from .models import User, TokenData
 
 
@@ -158,16 +159,19 @@ async def get_current_user(token: str = Depends(JWTBearer())) -> User:
             detail="Invalid token"
         )
     
-    # Create user object from token data
+    # Create user object from token data with HIPAA-compliant patient_id
+    patient_id = get_patient_id_from_user_id(token_data.sub)
+    
     user = User(
-        user_id=token_data.sub,
+        user_id=token_data.sub,  # Original user_id (internal use only)
+        patient_id=patient_id,   # HIPAA-compliant patient_id for data operations
         email=token_data.email,
         username=token_data.username,
         is_active=True,  # Assume active if token is valid
         roles=[]  # Could be extracted from token if needed
     )
     
-    logger.debug(f"Authenticated user: {token_data.sub[:8]}...")
+    logger.debug(f"Authenticated user: {token_data.sub[:8]}... -> patient_id: {patient_id[:8]}...")
     return user
 
 
@@ -190,4 +194,27 @@ def extract_user_id_from_token(token: str) -> Optional[str]:
         return user_id
     except Exception as e:
         logger.error(f"Failed to extract user_id from token: {e}")
+        return None
+
+
+def extract_patient_id_from_token(token: str) -> Optional[str]:
+    """
+    Extract user_id from JWT token and convert to HIPAA-compliant patient_id.
+    
+    Args:
+        token: JWT token string
+        
+    Returns:
+        Patient ID string or None if not found
+    """
+    try:
+        user_id = extract_user_id_from_token(token)
+        if not user_id:
+            return None
+        
+        patient_id = get_patient_id_from_user_id(user_id)
+        logger.debug(f"Converted user_id to patient_id: {user_id[:8]}... -> {patient_id[:8]}...")
+        return patient_id
+    except Exception as e:
+        logger.error(f"Failed to extract patient_id from token: {e}")
         return None

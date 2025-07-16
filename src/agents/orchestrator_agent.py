@@ -61,7 +61,7 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
 
     async def process_user_message(
         self,
-        user_id: str,
+        patient_id: str,
         session_id: str,
         message: str
     ) -> Dict[str, Any]:
@@ -72,7 +72,7 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
         """
         try:
             # Get conversation context
-            context = await self._get_conversation_context(user_id, session_id)
+            context = await self._get_conversation_context(patient_id, session_id)
             
             # Route to appropriate specialists
             router = await get_expert_router()
@@ -86,7 +86,7 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
                 try:
                     specialist = specialist_info['agent']
                     response = await specialist.analyze_query(
-                        user_id=user_id,
+                        patient_id=patient_id,
                         query=message,
                         context=context
                     )
@@ -109,7 +109,7 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
             
             # Log interaction
             log_user_action(
-                user_id,
+                patient_id,
                 "orchestrator_response",
                 {
                     "session_id": session_id,
@@ -129,7 +129,7 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
     
     async def stream_response(
         self,
-        user_id: str,
+        patient_id: str,
         session_id: str,
         message: str
     ) -> AsyncGenerator[Dict[str, Any], None]:
@@ -147,7 +147,7 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
             }
             
             # Get conversation context
-            context = await self._get_conversation_context(user_id, session_id)
+            context = await self._get_conversation_context(patient_id, session_id)
             
             # Route to specialists
             yield {
@@ -179,7 +179,7 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
                     
                     # Get specialist response
                     response = await specialist.analyze_query(
-                        user_id=user_id,
+                        patient_id=patient_id,
                         query=message,
                         context=context
                     )
@@ -223,7 +223,7 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
             
             # Log interaction
             log_user_action(
-                user_id,
+                patient_id,
                 "orchestrator_stream",
                 {
                     "session_id": session_id,
@@ -242,14 +242,14 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
     
     async def _get_conversation_context(
         self,
-        user_id: str,
+        patient_id: str,
         session_id: str
     ) -> Dict[str, Any]:
         """
         Gather conversation context including history and user medical data.
         
         Args:
-            user_id: User identifier
+            patient_id: User identifier
             session_id: Session identifier
             
         Returns:
@@ -295,7 +295,7 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
             
             # Build context
             context = {
-                "user_id": user_id,
+                "patient_id": patient_id,
                 "session_id": session_id,
                 "chat_history": chat_history,
                 "short_term_memory": short_term_context,
@@ -326,7 +326,7 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
         except Exception as e:
             logger.error(f"Failed to get conversation context: {e}")
             return {
-                "user_id": user_id,
+                "patient_id": patient_id,
                 "session_id": session_id,
                 "chat_history": [],
                 "short_term_memory": {},
@@ -336,7 +336,7 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
                 "error": str(e)
             }
     
-    async def clear_session_cache(self, user_id: str, session_id: str = None):
+    async def clear_session_cache(self, patient_id: str, session_id: str = None):
         """Clear cached session context."""
         if session_id:
             cache_key = f"{user_id}:{session_id}"
