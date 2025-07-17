@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
-from src.api.endpoints.timeline import router
+from src.api.v1.endpoints.timeline import router
 from src.utils.schema import TimelineEvent, TimelineResponse
 
 

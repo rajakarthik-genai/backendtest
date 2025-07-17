@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
 from typing import Dict, Any
 
-from src.db.mongo_db import MongoDBManager
-from src.db.neo4j_db import Neo4jManager
-from src.db.milvus_db import MilvusManager
-from src.db.redis_db import RedisManager
+from src.db.mongo_db import MongoDB
+from src.db.neo4j_db import Neo4jDB
+from src.db.milvus_db import MilvusDB
+from src.db.redis_db import RedisDB
 
 
 class TestMongoDBManager:
@@ -19,7 +19,7 @@ class TestMongoDBManager:
     @pytest.fixture
     def mongo_manager(self):
         """Create MongoDB manager instance."""
-        return MongoDBManager()
+        return MongoDB()
     
     @pytest.mark.asyncio
     async def test_init_mongo_success(self, mongo_manager):
@@ -94,7 +94,7 @@ class TestNeo4jManager:
     @pytest.fixture
     def neo4j_manager(self):
         """Create Neo4j manager instance."""
-        return Neo4jManager()
+        return Neo4jDB()
     
     def test_initialize_success(self, neo4j_manager):
         """Test successful Neo4j initialization."""
@@ -152,7 +152,7 @@ class TestMilvusManager:
     @pytest.fixture
     def milvus_manager(self):
         """Create Milvus manager instance."""
-        return MilvusManager()
+        return MilvusDB()
     
     def test_initialize_success(self, milvus_manager):
         """Test successful Milvus initialization."""
@@ -208,7 +208,7 @@ class TestRedisManager:
     @pytest.fixture
     def redis_manager(self):
         """Create Redis manager instance."""
-        return RedisManager()
+        return RedisDB()
     
     @pytest.mark.asyncio
     async def test_initialize_success(self, redis_manager):

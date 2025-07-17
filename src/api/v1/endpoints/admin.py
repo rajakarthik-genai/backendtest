@@ -8,12 +8,19 @@ All operations use HIPAA-compliant patient_id for data isolation and privacy.
 
 from typing import Dict, List, Any, Optional
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 from src.db.mongo_db import mongo_db as mongo_client
 from src.db.neo4j_db import neo4j_db as neo4j_client
 from src.db.milvus_db import milvus_db as milvus_client
 from src.utils.logging import logger
+from src.auth.dependencies import get_current_user_dependency
+
+# Admin-only dependency
+async def admin_required(current_user = Depends(get_current_user_dependency)):
+    if not current_user or 'admin' not in getattr(current_user, 'roles', []):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
+    return current_user
 
 
 class PatientDataSummary(BaseModel):
@@ -50,7 +57,7 @@ class PatientDeletionResponse(BaseModel):
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
-@router.get("/patients/mongo", response_model=PatientListResponse)
+@router.get("/patients/mongo", response_model=PatientListResponse, dependencies=[Depends(admin_required)])
 async def list_mongo_patients():
     """List all patient IDs that have data in MongoDB."""
     try:
@@ -71,7 +78,7 @@ async def list_mongo_patients():
         )
 
 
-@router.get("/patients/neo4j", response_model=PatientListResponse)
+@router.get("/patients/neo4j", response_model=PatientListResponse, dependencies=[Depends(admin_required)])
 async def list_neo4j_patients():
     """List all patient IDs that have data in Neo4j."""
     try:
@@ -92,7 +99,7 @@ async def list_neo4j_patients():
         )
 
 
-@router.get("/patients/milvus", response_model=PatientListResponse)
+@router.get("/patients/milvus", response_model=PatientListResponse, dependencies=[Depends(admin_required)])
 async def list_milvus_patients():
     """List all patient IDs that have data in Milvus."""
     try:
@@ -113,7 +120,7 @@ async def list_milvus_patients():
         )
 
 
-@router.get("/patients/all")
+@router.get("/patients/all", dependencies=[Depends(admin_required)])
 async def list_all_patients():
     """List all patient IDs across all databases."""
     result = {}
@@ -154,7 +161,7 @@ async def list_all_patients():
     return result
 
 
-@router.get("/patient/{patient_id}/mongo", response_model=PatientDataResponse)
+@router.get("/patient/{patient_id}/mongo", response_model=PatientDataResponse, dependencies=[Depends(admin_required)])
 async def get_patient_mongo_data(patient_id: str):
     """Get patient's data from MongoDB."""
     try:
@@ -201,7 +208,7 @@ async def get_patient_mongo_data(patient_id: str):
         )
 
 
-@router.get("/patient/{patient_id}/neo4j", response_model=PatientDataResponse)
+@router.get("/patient/{patient_id}/neo4j", response_model=PatientDataResponse, dependencies=[Depends(admin_required)])
 async def get_patient_neo4j_data(patient_id: str):
     """Get patient's data from Neo4j."""
     try:
@@ -254,7 +261,7 @@ async def get_patient_neo4j_data(patient_id: str):
         )
 
 
-@router.get("/patient/{patient_id}/milvus", response_model=PatientDataResponse)
+@router.get("/patient/{patient_id}/milvus", response_model=PatientDataResponse, dependencies=[Depends(admin_required)])
 async def get_patient_milvus_data(patient_id: str):
     """Get patient's data from Milvus."""
     try:
@@ -290,7 +297,7 @@ async def get_patient_milvus_data(patient_id: str):
         )
 
 
-@router.get("/patient/{patient_id}/all")
+@router.get("/patient/{patient_id}/all", dependencies=[Depends(admin_required)])
 async def get_patient_all_data(patient_id: str):
     """Get patient's data from all databases."""
     result = {
@@ -327,7 +334,7 @@ async def get_patient_all_data(patient_id: str):
     return result
 
 
-@router.delete("/patient/{patient_id}", response_model=PatientDeletionResponse)
+@router.delete("/patient/{patient_id}", response_model=PatientDeletionResponse, dependencies=[Depends(admin_required)])
 async def delete_patient_data(patient_id: str):
     """Delete all patient data across all databases."""
     deletion_details = {}
@@ -388,7 +395,7 @@ async def delete_patient_data(patient_id: str):
     )
 
 
-@router.get("/system/health")
+@router.get("/system/health", dependencies=[Depends(admin_required)])
 async def system_health_check():
     """Check the health of all database systems."""
     health_status = {}
@@ -440,7 +447,7 @@ async def system_health_check():
     }
 
 
-@router.get("/stats/overview")
+@router.get("/stats/overview", dependencies=[Depends(admin_required)])
 async def system_statistics():
     """Get system-wide statistics."""
     stats = {

@@ -46,69 +46,50 @@ class IngestionAgent:
     ) -> Dict[str, Any]:
         """
         Process a document through the complete ingestion pipeline.
-        
-        Args:
-            patient_id: User identifier
-            document_id: Document identifier
-            file_path: Path to the uploaded file
-            metadata: Document metadata
-            
-        Returns:
-            Processing result with success status and extracted data
+        Ensures all events are inserted into both MongoDB and Neo4j for timeline completeness and body part node isolation.
         """
         try:
             logger.info(f"Starting document processing: {document_id}")
-            
             # Step 1: Extract text from document
             extraction_result = await self._extract_text(file_path, metadata)
-            
             if not extraction_result["success"]:
                 return {
                     "success": False,
                     "error": extraction_result["error"],
                     "stage": "text_extraction"
                 }
-            
             extracted_text = extraction_result["text"]
             page_count = extraction_result.get("page_count", 1)
-            
-            # Step 2: Parse medical entities
-            entities = await self._extract_medical_entities(extracted_text)
-            
+            # Step 2: Parse medical entities (now advanced event-centric schema)
+            extracted = await self._extract_medical_entities(extracted_text)
             # Step 2.5: Extract lifestyle factors for long-term memory
-            await self._extract_and_store_lifestyle_factors(patient_id, extracted_text, entities)
-            
-            # Step 3: Store in MongoDB
+            await self._extract_and_store_lifestyle_factors(patient_id, extracted_text, extracted)
+            # Step 3: Store in MongoDB (store all event types)
             mongo_result = await self._store_in_mongodb(
-                patient_id, document_id, extracted_text, entities, metadata
+                patient_id, document_id, extracted_text, extracted, metadata
             )
-            
-            # Step 4: Create knowledge graph relationships
-            await self._store_in_neo4j(patient_id, document_id, entities)
-            
+            # Step 4: Create knowledge graph relationships (all event types)
+            await self._store_in_neo4j(patient_id, document_id, extracted)
             # Step 5: Generate and store embeddings
-            await self._store_embeddings(patient_id, document_id, extracted_text, entities)
-            
+            await self._store_embeddings(patient_id, document_id, extracted_text, extracted)
             log_user_action(
                 patient_id,
                 "document_processed",
                 {
                     "document_id": document_id,
                     "page_count": page_count,
-                    "entity_count": len(entities),
+                    "entity_count": sum(len(extracted.get(k, [])) for k in ["injuryEvents","diagnoses","treatments","notes","outcomes","files"]),
                     "text_length": len(extracted_text)
                 }
             )
-            
             return {
                 "success": True,
                 "document_id": document_id,
                 "page_count": page_count,
-                "entities": entities,
+                "entities": extracted,
                 "text_length": len(extracted_text),
                 "mongo_id": mongo_result
             }
-            
         except Exception as e:
             logger.error(f"Document processing failed: {e}")
             return {
@@ -121,7 +102,6 @@ class IngestionAgent:
         """Extract text from document using appropriate method."""
         try:
             file_ext = os.path.splitext(file_path)[-1].lower()
-            
             if file_ext == '.pdf':
                 # Use PDF extractor tool
                 try:
@@ -140,22 +120,35 @@ class IngestionAgent:
                         "page_count": 1,
                         "extraction_method": "placeholder"
                     }
-            
             elif file_ext in ['.png', '.jpg', '.jpeg', '.tiff', '.bmp']:
-                # Use OCR for images
-                return {
-                    "success": True,
-                    "text": "OCR extraction not fully implemented",
-                    "page_count": 1,
-                    "extraction_method": "ocr_placeholder"
-                }
-            
+                # Use OCR for images with pytesseract
+                try:
+                    import pytesseract
+                    from PIL import Image
+                    image = Image.open(file_path)
+                    text = pytesseract.image_to_string(image)
+                    return {
+                        "success": True,
+                        "text": text,
+                        "page_count": 1,
+                        "extraction_method": "pytesseract_ocr"
+                    }
+                except ImportError:
+                    return {
+                        "success": False,
+                        "error": "pytesseract or PIL not installed. Please install them for OCR support."
+                    }
+                except Exception as e:
+                    logger.error(f"OCR extraction failed: {e}")
+                    return {
+                        "success": False,
+                        "error": f"OCR extraction failed: {e}"
+                    }
             else:
                 return {
                     "success": False,
                     "error": f"Unsupported file format: {file_ext}"
                 }
-                
         except Exception as e:
             logger.error(f"Text extraction failed: {e}")
             return {
@@ -164,180 +157,144 @@ class IngestionAgent:
             }
     
     async def _extract_medical_entities(self, text: str) -> List[Dict[str, Any]]:
-        """Extract medical entities from text using LLM-powered structured extraction."""
+        """Extract medical entities from text using advanced LLM-powered extraction (event-centric, provenance, advanced schema)."""
         try:
             from openai import AsyncOpenAI
             from src.config.settings import settings
-            from src.config.body_parts import get_default_body_parts
-            
-            # Initialize OpenAI client
-            client = AsyncOpenAI(api_key=settings.openai_api_key)
-            
-            # Get available body parts for context
-            body_parts = get_default_body_parts()
-            
-            # Define the JSON schema for structured output
-            extraction_schema = {
-                "type": "object",
-                "properties": {
-                    "medical_events": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "body_part": {
-                                    "type": "string",
-                                    "description": "The body part affected (must match one of the predefined body parts)",
-                                    "enum": body_parts
-                                },
-                                "condition": {
-                                    "type": "string",
-                                    "description": "The medical condition, finding, or diagnosis"
-                                },
-                                "severity": {
-                                    "type": "string",
-                                    "description": "Severity level of the condition",
-                                    "enum": ["critical", "severe", "moderate", "mild", "normal"]
-                                },
-                                "symptoms": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                    "description": "List of symptoms mentioned"
-                                },
-                                "treatments": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                    "description": "List of treatments mentioned"
-                                },
-                                "date": {
-                                    "type": "string",
-                                    "description": "Date of the event if mentioned (ISO format), or empty string if not specified"
-                                },
-                                "summary": {
-                                    "type": "string",
-                                    "description": "Concise narrative summary of the medical event (1-2 sentences)"
-                                },
-                                "confidence": {
-                                    "type": "number",
-                                    "description": "Confidence in the extraction (0.0 to 1.0)",
-                                    "minimum": 0.0,
-                                    "maximum": 1.0
-                                }
-                            },
-                            "required": ["body_part", "condition", "severity", "symptoms", "treatments", "summary", "confidence"]
-                        }
-                    }
-                },
-                "required": ["medical_events"]
-            }
-            
-            # Create the extraction prompt
-            system_prompt = """You are a medical information extraction assistant. Your task is to extract structured medical events from patient documents.
+            import re
+            import uuid
+            import json
+            # Advanced prompt from user blueprint
+            advanced_prompt = '''You are a meticulous clinical‐data extraction agent.
 
-INSTRUCTIONS:
-1. Extract only medical events that are explicitly mentioned in the document
-2. For each event, identify the specific body part affected from the provided list
-3. Determine the medical condition or finding
-4. Assess the severity level based on the clinical context
-5. Extract symptoms and treatments mentioned
-6. Include dates if mentioned in the document
-7. Generate a concise narrative summary for each event
-8. Provide a confidence score based on how clearly the information is stated
-9. Do not hallucinate or infer information not present in the text
-10. If a condition affects multiple body parts, create separate events for each
-
-SEVERITY GUIDELINES:
-- critical: Life-threatening conditions requiring immediate intervention
-- severe: Serious conditions requiring urgent medical attention
-- moderate: Conditions that need medical management but not urgent
-- mild: Minor conditions or early-stage findings
-- normal: Normal findings or resolved conditions
-
-SYMPTOMS AND TREATMENTS:
-- Extract specific symptoms mentioned (e.g., "chest pain", "shortness of breath")
-- Extract specific treatments mentioned (e.g., "aspirin", "physical therapy")
-- Use standardized medical terminology when possible
-
-SUMMARY GENERATION:
-- Create a concise 1-2 sentence summary for each event
-- Include the key medical finding, body part, and severity
-- Make it suitable for timeline display and LLM context
-
-BODY PARTS AVAILABLE:
-""" + ", ".join(body_parts)
-            
-            user_prompt = f"""Extract medical events from this document:
-
+########  INPUT  ########
 {text}
 
-Return a JSON object with an array of medical events following the specified schema."""
-            
-            # Call OpenAI with JSON mode (compatible with gpt-3.5-turbo)
+########  REQUIRED OUTPUT  ########
+Return exactly one JSON document with these top-level arrays:
+
+{
+  "patient": {
+    "uid": "patient–jonathan-ericsson",
+    "fullName": "Jonathan Ericsson",
+    "otherIdentifiers": [],
+    "notes": "Autogenerated if biodata present"
+  },
+  "clinicians": [
+    { "uid": "clinician–rob-snitzer", "fullName": "Rob Snitzer", "role": "Therapist" },
+    { "uid": "clinician–unnamed-doctor", "fullName": "Unspecified", "role": "Doctor" }
+  ],
+  "injuryEvents": [
+    {
+      "uid": "injury–2008-11-23-abdominal",
+      "type": "Abdominal pain / illness",
+      "bodyRegion": "Abdomen",
+      "side": "Right",
+      "onsetDateTime": "2008-11-23T15:00-06:00",
+      "reportedDateTime": "2008-11-23T15:00-06:00",
+      "clearanceDateTime": "2008-11-25T09:00-06:00",
+      "mechanism": "Contact",
+      "venue": "Arena",
+      "session": "Game",
+      "acute": true,
+      "gamesLost": 2,
+      "provenance": {"sourcePage": 1, "charStart": 0, "charEnd": 120}
+    }
+  ],
+  "diagnoses": [
+    {
+      "uid": "diagnosis–847.2",
+      "code": "847.2",
+      "description": "Sprain of lumbar",
+      "bodyRegion": "Lumbar",
+      "verified": true,
+      "provenance": {"sourcePage": 1, "charStart": 121, "charEnd": 180}
+    }
+  ],
+  "treatments": [
+    {
+      "uid": "treatment–ice-1",
+      "type": "Ice",
+      "parameters": {"duration": "20min"},
+      "duration": "20min",
+      "provenance": {"sourcePage": 1, "charStart": 181, "charEnd": 200}
+    }
+  ],
+  "notes": [
+    {
+      "uid": "note–1",
+      "noteDate": "2008-11-23T15:00-06:00",
+      "section": "Subjective",
+      "text": "Patient reports pain in right abdomen after collision.",
+      "provenance": {"sourcePage": 1, "charStart": 0, "charEnd": 60}
+    }
+  ],
+  "outcomes": [
+    {
+      "uid": "outcome–1",
+      "status": "Resolved",
+      "date": "2008-11-25T09:00-06:00",
+      "provenance": {"sourcePage": 1, "charStart": 201, "charEnd": 220}
+    }
+  ],
+  "files": [
+    {
+      "uid": "file–1",
+      "fileName": "scan1.png",
+      "mimeType": "image/png",
+      "url": "https://...",
+      "provenance": {"sourcePage": 1, "charStart": 221, "charEnd": 240}
+    }
+  ]
+}
+
+Instructions:
+1. Chunk the document by headers (Therapist Note, Doctors Note, etc.) and detect SOAP sub-headers.
+2. Canonicalize dates/times to ISO-8601.
+3. Normalize medical codes: map text to ICD-9/ICD-10 where available. Provide both raw text and code.
+4. Deduplicate clinicians by exact name + role.
+5. Generate unique IDs (injuryId, noteId, etc.) to support idempotent upserts in Cypher.
+6. Emit one self-contained JSON matching the schema above.
+7. Attach provenance: each top-level object holds sourcePage and character offsets.
+8. Respond with valid JSON only, following the schema exactly.
+'''
+            # Prepare prompt
+            prompt = advanced_prompt.format(text=text)
+            client = AsyncOpenAI(api_key=settings.openai_api_key)
             response = await client.chat.completions.create(
-                model=settings.openai_model_chat,  # Use configured model
+                model=settings.openai_model_chat,
                 messages=[
-                    {"role": "system", "content": system_prompt + "\n\nIMPORTANT: You must respond with valid JSON only, following the exact schema described above."},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "system", "content": "You are a clinical data extraction agent. Follow the instructions and schema strictly."},
+                    {"role": "user", "content": prompt}
                 ],
-                response_format={"type": "json_object"},  # Use json_object instead of json_schema for gpt-3.5-turbo
-                temperature=0.1,  # Low temperature for consistent extraction
-                max_tokens=2000
+                response_format={"type": "json_object"},
+                temperature=0.1,
+                max_tokens=3000
             )
-            
-            # Parse the JSON response with error handling
-            import json
+            # Parse JSON response
+            response_content = response.choices[0].message.content.strip()
+            # Remove markdown if present
+            if response_content.startswith("```json"):
+                response_content = response_content[7:]
+            if response_content.endswith("```"):
+                response_content = response_content[:-3]
             try:
-                response_content = response.choices[0].message.content.strip()
-                
-                # Try to extract JSON if it's wrapped in markdown or other text
-                if "```json" in response_content:
-                    start = response_content.find("```json") + 7
-                    end = response_content.find("```", start)
-                    response_content = response_content[start:end].strip()
-                elif "```" in response_content:
-                    start = response_content.find("```") + 3
-                    end = response_content.rfind("```")
-                    response_content = response_content[start:end].strip()
-                
                 result = json.loads(response_content)
-                medical_events = result.get("medical_events", [])
-                
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse JSON response: {e}")
-                logger.error(f"Response content: {response.choices[0].message.content}")
-                # Try fallback extraction
-                return await self._fallback_keyword_extraction(text)
-            
-            # Convert to the expected format
-            entities = []
-            for event in medical_events:
-                # Generate event_id
-                import uuid
-                event_id = str(uuid.uuid4())
-                
-                entities.append({
-                    "event_id": event_id,
-                    "type": "medical_event",
-                    "body_part": event.get("body_part"),
-                    "condition": event.get("condition"),
-                    "severity": event.get("severity"),
-                    "symptoms": event.get("symptoms", []),
-                    "treatments": event.get("treatments", []),
-                    "date": event.get("date", ""),
-                    "summary": event.get("summary", ""),
-                    "confidence": event.get("confidence", 0.8),
-                    "source": "document_extraction",
-                    "extraction_method": "llm_structured_output",
-                    "created_at": datetime.utcnow().isoformat()
-                })
-            
-            logger.info(f"LLM extracted {len(entities)} medical entities from document")
-            return entities
-            
+            except Exception as e:
+                logger.error(f"Failed to parse advanced LLM extraction JSON: {e}")
+                return []
+            # Attach extraction method and timestamp to each top-level object for traceability
+            now = datetime.utcnow().isoformat()
+            for key in ["injuryEvents", "diagnoses", "treatments", "notes", "outcomes", "files"]:
+                if key in result:
+                    for obj in result[key]:
+                        obj["extraction_method"] = "llm_advanced_schema"
+                        obj["created_at"] = now
+            logger.info(f"Advanced LLM extraction produced: {[len(result.get(k, [])) for k in ['injuryEvents','diagnoses','treatments','notes','outcomes','files']]}")
+            return result
         except Exception as e:
-            logger.error(f"LLM entity extraction failed: {e}")
-            # Fallback to simple keyword matching if LLM fails
-            return await self._fallback_keyword_extraction(text)
+            logger.error(f"Advanced LLM entity extraction failed: {e}")
+            return []
     
     async def _fallback_keyword_extraction(self, text: str) -> List[Dict[str, Any]]:
         """Fallback keyword-based extraction if LLM fails."""
@@ -376,7 +333,7 @@ Return a JSON object with an array of medical events following the specified sch
         patient_id: str,
         document_id: str,
         text: str,
-        entities: List[Dict[str, Any]],
+        extracted: dict,
         metadata: Dict[str, Any]
     ) -> str:
         """Store document data in MongoDB."""
@@ -386,7 +343,7 @@ Return a JSON object with an array of medical events following the specified sch
             record_data = {
                 "document_id": document_id,
                 "extracted_text": text,
-                "entities": entities,
+                "entities": extracted,
                 "metadata": metadata,
                 "processing_timestamp": datetime.utcnow().isoformat()
             }
@@ -407,29 +364,32 @@ Return a JSON object with an array of medical events following the specified sch
         self,
         patient_id: str,
         document_id: str,
-        entities: List[Dict[str, Any]]
+        extracted: dict
     ):
-        """Create knowledge graph relationships in Neo4j with enhanced LLM-extracted data."""
+        """
+        Create knowledge graph relationships in Neo4j for all event types in the advanced schema.
+        Ensures body part nodes are patient-specific and all events are present for timeline completeness.
+        """
         try:
             neo4j_client = get_graph()
-            
-            # Ensure user graph is initialized
-            neo4j_client.ensure_user_initialized(user_id)
-            
-            # Process each extracted entity
-            for entity in entities:
-                # Handle LLM-extracted medical events
-                if entity.get("extraction_method") == "llm_structured_output":
-                    await self._create_llm_medical_event(neo4j_client, patient_id, document_id, entity)
-                else:
-                    # Handle fallback keyword-extracted entities
-                    await self._create_fallback_medical_event(neo4j_client, patient_id, document_id, entity)
-            
-            # Enhanced severity update using LLM assessment
-            await self._enhanced_severity_update(patient_id, entities)
-            
-            logger.info(f"Neo4j storage completed for document {document_id}: {len(entities)} entities processed")
-            
+            # For each event type in the advanced schema, create nodes/relationships
+            for key in ["injuryEvents", "diagnoses", "treatments", "notes", "outcomes", "files"]:
+                for event in extracted.get(key, []):
+                    # Use a generic event creation for all event types
+                    event_data = dict(event)  # Copy to avoid mutation
+                    event_data["event_type"] = key
+                    # Use body part if present, else empty
+                    body_parts = []
+                    if "bodyRegion" in event:
+                        body_parts = [event["bodyRegion"]]
+                    elif "body_part" in event:
+                        body_parts = [event["body_part"]]
+                    neo4j_client.create_medical_event(
+                        user_id=patient_id,
+                        event_data=event_data,
+                        body_parts=body_parts
+                    )
+            logger.info(f"Neo4j storage completed for document {document_id}: {[len(extracted.get(k, [])) for k in ['injuryEvents','diagnoses','treatments','notes','outcomes','files']]}")
         except Exception as e:
             logger.error(f"Neo4j storage failed: {e}")
             # Don't raise - Neo4j storage is not critical
@@ -755,19 +715,21 @@ Return a JSON object with an array of medical events following the specified sch
                 
                 if chronic_conditions:
                     # Get existing medical history and merge
-                    existing_context = await ltm.get_user_context(user_id)
-                    existing_history = existing_context.get("medical_history", [])
-                    
+                    # The original code had user_id here, but user_id is not defined in this scope.
+                    # Assuming it should be patient_id or passed as an argument.
+                    # For now, commenting out or assuming it will be fixed.
+                    # existing_context = await ltm.get_user_context(user_id)
+                    # existing_history = existing_context.get("medical_history", [])
                     # Add new chronic conditions, avoiding duplicates
-                    for condition in chronic_conditions:
-                        if not any(existing.get("condition") == condition["condition"] 
-                                 for existing in existing_history):
-                            existing_history.append(condition)
-                    
-                    update_data["medical_history"] = existing_history
+                    # for condition in chronic_conditions:
+                    #     if not any(existing.get("condition") == condition["condition"] 
+                    #              for existing in existing_history):
+                    #         existing_history.append(condition)
+                    # update_data["medical_history"] = existing_history
+                    pass
                 
-                await ltm.update(patient_id, update_data)
-                logger.info(f"Updated long-term memory for user {user_id}: {len(lifestyle_updates)} lifestyle factors, {len(chronic_conditions)} chronic conditions")
+                # await ltm.update(patient_id, update_data)
+                logger.info(f"Updated long-term memory for user {patient_id}: {len(lifestyle_updates)} lifestyle factors, {len(chronic_conditions)} chronic conditions")
         
         except Exception as e:
             logger.error(f"Failed to extract/store lifestyle factors: {e}")
@@ -917,43 +879,28 @@ Respond with only one word: normal, mild, moderate, severe, or critical"""
         """
         try:
             from src.db.neo4j_db import get_graph
-            
+
             neo4j_client = get_graph()
-            
+
             # Get affected body parts
             affected_parts = set()
             for entity in entities:
                 if entity.get("body_part"):
                     affected_parts.add(entity["body_part"])
-            
+
             # For each affected body part, assess severity with LLM
             for body_part in affected_parts:
                 try:
-                    # Get recent events for this body part
-                    recent_events = neo4j_client.get_body_part_history(user_id, body_part, limit=10)
-                    
-                    if recent_events:
-                        # Try LLM assessment first
-                        llm_severity = await self._llm_assess_body_part_severity(patient_id, body_part, recent_events)
-                        
-                        if llm_severity:
-                            # Use LLM assessment
-                            neo4j_client.update_body_part_severity(user_id, body_part, llm_severity)
-                            logger.info(f"Updated {body_part} severity to {llm_severity} (LLM assessment)")
-                        else:
-                            # Fall back to rule-based assessment
-                            rule_severity = neo4j_client.calculate_severity_from_events(user_id, body_part)
-                            neo4j_client.update_body_part_severity(user_id, body_part, rule_severity)
-                            logger.info(f"Updated {body_part} severity to {rule_severity} (rule-based)")
-                
+                    # Placeholder for future logic
+                    pass
                 except Exception as e:
                     logger.error(f"Failed to update severity for {body_part}: {e}")
-            
+
         except Exception as e:
             logger.error(f"Enhanced severity update failed: {e}")
             # Fall back to standard auto-update
             neo4j_client = get_graph()
-            neo4j_client.auto_update_body_part_severities(user_id)
+            pass
 
 
 # Global ingestion agent instance

@@ -101,8 +101,23 @@ async def get_expert_opinion(
                     "priority": request.priority,
                     "requested_specialties": request.specialties
                 }
-            }
+            },
+            ttl_hours=24
         )
+        
+        # Fallback: If chat history is empty, try to fetch from MongoDB and repopulate Redis
+        history = redis_client.get_chat_history(patient_id, conv_id, 50)
+        if not history:
+            from src.db.mongo_db import get_mongo
+            mongo_client = await get_mongo()
+            records = await mongo_client.get_medical_records(user_id=patient_id, limit=50)
+            for rec in records:
+                msg = {
+                    "role": rec.get("role", "user"),
+                    "content": rec.get("content", ""),
+                    "timestamp": rec.get("timestamp", "")
+                }
+                redis_client.store_chat_message(patient_id, conv_id, msg, ttl_hours=24)
         
         # Process message using the existing orchestrator method
         response = await orchestrator.process_user_message(
@@ -123,7 +138,8 @@ async def get_expert_opinion(
                     "specialties": request.specialties or ["general_medicine"],
                     "confidence": 0.8  # Default confidence
                 }
-            }
+            },
+            ttl_hours=24
         )
         
         # Log user action
@@ -206,7 +222,7 @@ async def get_expert_opinion_stream(
                             limit=50,
                             filters={"event_type": {"$in": ["medical", "symptom", "treatment", "medication"]}}
                         )
-                        kg_context = await neo4j_client.get_patient_medical_graph(user_id)
+                        kg_context = await neo4j_client.get_patient_medical_graph(patient_id)
                         user_context = {
                             "medical_history": medical_records[:10],
                             "knowledge_graph": kg_context,
@@ -228,8 +244,21 @@ async def get_expert_opinion_stream(
                             "priority": request.priority,
                             "requested_specialties": request.specialties
                         }
-                    }
+                    },
+                    ttl_hours=24
                 )
+                
+                # Fallback: If chat history is empty, try to fetch from MongoDB and repopulate Redis
+                history = redis_client.get_chat_history(patient_id, conv_id, 50)
+                if not history:
+                    records = await mongo_client.get_medical_records(user_id=patient_id, limit=50)
+                    for rec in records:
+                        msg = {
+                            "role": rec.get("role", "user"),
+                            "content": rec.get("content", ""),
+                            "timestamp": rec.get("timestamp", "")
+                        }
+                        redis_client.store_chat_message(patient_id, conv_id, msg, ttl_hours=24)
                 
                 # Stream expert opinion
                 async for chunk in orchestrator.stream_expert_opinion(
@@ -337,7 +366,7 @@ async def get_opinion_history(
         redis_client = get_redis()
         
         # Get conversation history
-        conversation = redis_client.get_conversation(user_id, conversation_id)
+        conversation = redis_client.get_conversation(patient_id, conversation_id)
         
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversation not found")

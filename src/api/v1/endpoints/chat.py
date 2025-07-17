@@ -63,7 +63,7 @@ async def send_message(
         # Store conversation in memory
         redis_client = get_redis()
         
-        # Store user message
+        # Store user message with TTL
         redis_client.store_chat_message(
             patient_id,
             session_id,
@@ -71,10 +71,11 @@ async def send_message(
                 "role": "user",
                 "content": request.message,
                 "timestamp": datetime.utcnow().isoformat()
-            }
+            },
+            ttl_hours=24
         )
         
-        # Store assistant response
+        # Store assistant response with TTL
         redis_client.store_chat_message(
             patient_id,
             session_id,
@@ -83,8 +84,23 @@ async def send_message(
                 "content": response["content"],
                 "timestamp": datetime.utcnow().isoformat(),
                 "metadata": response.get("metadata", {})
-            }
+            },
+            ttl_hours=24
         )
+        
+        # Fallback: If chat history is empty, try to fetch from MongoDB and repopulate Redis
+        history = redis_client.get_chat_history(patient_id, session_id, 50)
+        if not history:
+            from src.db.mongo_db import get_mongo
+            mongo_client = await get_mongo()
+            records = await mongo_client.get_medical_records(user_id=patient_id, limit=50)
+            for rec in records:
+                msg = {
+                    "role": rec.get("role", "user"),
+                    "content": rec.get("content", ""),
+                    "timestamp": rec.get("timestamp", "")
+                }
+                redis_client.store_chat_message(patient_id, session_id, msg, ttl_hours=24)
         
         return ChatResponse(
             response=response["content"],
@@ -130,8 +146,23 @@ async def stream_chat(
                 "role": "user",
                 "content": request.message,
                 "timestamp": datetime.utcnow().isoformat()
-            }
+            },
+            ttl_hours=24
         )
+        
+        # Fallback: If chat history is empty, try to fetch from MongoDB and repopulate Redis
+        history = redis_client.get_chat_history(patient_id, session_id, 50)
+        if not history:
+            from src.db.mongo_db import get_mongo
+            mongo_client = await get_mongo()
+            records = await mongo_client.get_medical_records(user_id=patient_id, limit=50)
+            for rec in records:
+                msg = {
+                    "role": rec.get("role", "user"),
+                    "content": rec.get("content", ""),
+                    "timestamp": rec.get("timestamp", "")
+                }
+                redis_client.store_chat_message(patient_id, session_id, msg, ttl_hours=24)
         
         async def event_generator() -> AsyncGenerator[str, None]:
             """Generate SSE events for streaming response."""
@@ -168,7 +199,8 @@ async def stream_chat(
                         "role": "assistant",
                         "content": full_response,
                         "timestamp": datetime.utcnow().isoformat()
-                    }
+                    },
+                    ttl_hours=24
                 )
                 
                 # Send completion signal

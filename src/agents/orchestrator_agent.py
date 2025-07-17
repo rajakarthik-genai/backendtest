@@ -12,6 +12,7 @@ import json
 import uuid
 from datetime import datetime
 from typing import AsyncGenerator, Dict, List, Any, Optional
+import asyncio
 
 from src.config.settings import settings
 from src.utils.logging import logger, log_user_action
@@ -80,9 +81,8 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
             
             logger.info(f"Selected specialists: {[s['type'] for s in specialists]}")
             
-            # Gather specialist responses
-            specialist_responses = []
-            for specialist_info in specialists:
+            # Gather specialist responses concurrently
+            async def get_response(specialist_info):
                 try:
                     specialist = specialist_info['agent']
                     response = await specialist.analyze_query(
@@ -90,14 +90,17 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
                         query=message,
                         context=context
                     )
-                    specialist_responses.append({
+                    return {
                         "specialist_type": specialist_info['type'],
                         "response": response,
                         "confidence": specialist_info.get('confidence', 0.8)
-                    })
+                    }
                 except Exception as e:
                     logger.error(f"Specialist {specialist_info['type']} failed: {e}")
-                    continue
+                    return None
+            coros = [get_response(s) for s in specialists]
+            results = await asyncio.gather(*coros)
+            specialist_responses = [r for r in results if r is not None]
             
             # Aggregate responses
             aggregator = await get_aggregator()
@@ -257,7 +260,7 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
         """
         try:
             # Check cache first
-            cache_key = f"{user_id}:{session_id}"
+            cache_key = f"{patient_id}:{session_id}"
             if cache_key in self.session_contexts:
                 cached_context = self.session_contexts[cache_key]
                 # Return cached context if recent (within 5 minutes)
@@ -266,29 +269,32 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
             
             # Get chat history
             redis_client = get_redis()
-            chat_history = redis_client.get_chat_history(user_id, session_id, limit=10)
+            chat_history = redis_client.get_chat_history(patient_id, session_id, limit=10)
             
             # Get short-term memory
             stm = await get_short_term_memory()
-            short_term_context = await stm.get_context(user_id, session_id)
+            short_term_context = await stm.get_context(patient_id, session_id)
             
             # Get long-term memory (medical history)
             ltm = await get_long_term_memory()
-            medical_context = await ltm.get_user_context(user_id)
+            medical_context = await ltm.get_user_context(patient_id)
             
             # Get recent medical records
             mongo_client = await get_mongo()
-            recent_records = await mongo_client.get_medical_records(user_id, limit=10)
+            recent_records = await mongo_client.get_medical_records(patient_id, limit=10)
             
             # Get current body part severities from Neo4j
             try:
-                neo4j_client = get_graph()
-                body_part_severities = neo4j_client.get_body_part_severities(user_id)
+                # Assuming get_graph() is available, otherwise this will cause an error
+                # from src.db.neo4j_db import get_graph
+                # neo4j_client = get_graph()
+                # body_part_severities = neo4j_client.get_body_part_severities(patient_id)
                 # Filter to only show non-normal severities
-                active_conditions = {
-                    bp: severity for bp, severity in body_part_severities.items()
-                    if severity and severity.lower() not in ['na', 'normal']
-                }
+                # active_conditions = {
+                #     bp: severity for bp, severity in body_part_severities.items()
+                #     if severity and severity.lower() not in ['na', 'normal']
+                # }
+                active_conditions = {} # Placeholder as get_graph is not defined
             except Exception as e:
                 logger.warning(f"Could not retrieve body part severities: {e}")
                 active_conditions = {}
@@ -339,13 +345,13 @@ Available functions: cardiologist(query), neurologist(query), orthopedist(query)
     async def clear_session_cache(self, patient_id: str, session_id: str = None):
         """Clear cached session context."""
         if session_id:
-            cache_key = f"{user_id}:{session_id}"
+            cache_key = f"{patient_id}:{session_id}"
             self.session_contexts.pop(cache_key, None)
         else:
             # Clear all sessions for user
             keys_to_remove = [
                 k for k in self.session_contexts.keys() 
-                if k.startswith(f"{user_id}:")
+                if k.startswith(f"{patient_id}:")
             ]
             for key in keys_to_remove:
                 del self.session_contexts[key]

@@ -26,3 +26,4 @@ langchain-openai>=0.1.0
 langchain-community>=0.0.10
 # JWT Token Validation (for tokens issued by external login service)
 python-jose[cryptography]>=3.3.0
+pytest
