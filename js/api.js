@@ -6,9 +6,9 @@ class APIService {
             this.backendBaseURL = window.MEDITWIN_CONFIG.getBackendURL();
             this.agentsBaseURL = window.MEDITWIN_CONFIG.getAgentsURL();
         } else {
-            // Updated with your actual running ngrok URLs (corrected mapping):
-            this.backendBaseURL = 'https://lenient-sunny-grouse.ngrok-free.app'; // meditwin-backend for auth (port 8081)
-            this.agentsBaseURL = 'https://mackerel-liberal-loosely.ngrok-free.app';  // meditwin-agents for AI services (port 8000)
+            // Updated with your actual running ngrok URLs:
+            this.backendBaseURL = 'https://lenient-sunny-grouse.ngrok-free.app'; // meditwin-backend for auth (login service)
+            this.agentsBaseURL = 'https://mackerel-liberal-loosely.ngrok-free.app';  // meditwin-agents for AI services (agent service)
         }
         
         this.token = localStorage.getItem('authToken');

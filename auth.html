@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediTwin - Login</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="styles/auth.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': {
+                            50: '#f0fdfa',
+                            500: '#14b8a6',
+                            600: '#0d9488',
+                            700: '#0f766e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-4">
+    <!-- Authentication Container -->
+    <div class="w-full max-w-md">
+        <!-- Logo/Header -->
+        <div class="text-center mb-8">
+            <div class="w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center mx-auto mb-4">
+                <svg class="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
+            </div>
+            <h1 class="text-3xl font-bold text-white mb-2">MediTwin</h1>
+            <p class="text-gray-400">Digital Twin Health Dashboard</p>
+        </div>
+
+        <!-- Login Form -->
+        <div id="login-container" class="bg-gray-800 rounded-2xl shadow-2xl p-8 border border-gray-700">
+            <div class="text-center mb-6">
+                <h2 class="text-2xl font-bold text-white mb-2">Welcome Back</h2>
+                <p class="text-gray-400">Sign in to access your health dashboard</p>
+            </div>
+
+            <form id="login-form" class="space-y-6">
+                <div class="space-y-4">
+                    <div>
+                        <label for="login-email" class="block text-sm font-medium text-gray-300 mb-2">Email</label>
+                        <input 
+                            type="email" 
+                            id="login-email" 
+                            name="email"
+                            required
+                            class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                            placeholder="Enter your email"
+                        />
+                    </div>
+                    <div>
+                        <label for="login-password" class="block text-sm font-medium text-gray-300 mb-2">Password</label>
+                        <input 
+                            type="password" 
+                            id="login-password" 
+                            name="password"
+                            required
+                            class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                            placeholder="Enter your password"
+                        />
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between">
+                    <label class="flex items-center">
+                        <input type="checkbox" class="w-4 h-4 text-primary-600 bg-gray-700 border-gray-600 rounded focus:ring-primary-500">
+                        <span class="ml-2 text-sm text-gray-300">Remember me</span>
+                    </label>
+                    <a href="#" class="text-sm text-primary-400 hover:text-primary-300">Forgot password?</a>
+                </div>
+
+                <button 
+                    type="submit" 
+                    id="login-submit"
+                    class="w-full bg-gradient-to-r from-primary-600 to-primary-700 text-white py-3 px-4 rounded-lg font-medium hover:from-primary-700 hover:to-primary-800 focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-gray-800 transition-all duration-200 transform hover:scale-105"
+                >
+                    <span id="login-submit-text">Sign In</span>
+                    <div id="login-loading" class="hidden flex items-center justify-center">
+                        <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Signing in...
+                    </div>
+                </button>
+            </form>
+
+            <div class="mt-6 text-center">
+                <p class="text-gray-400">
+                    Don't have an account? 
+                    <button id="show-signup" class="text-primary-400 hover:text-primary-300 font-medium">Sign up</button>
+                </p>
+            </div>
+        </div>
+
+        <!-- Signup Form -->
+        <div id="signup-container" class="bg-gray-800 rounded-2xl shadow-2xl p-8 border border-gray-700 hidden">
+            <div class="text-center mb-6">
+                <h2 class="text-2xl font-bold text-white mb-2">Create Account</h2>
+                <p class="text-gray-400">Join MediTwin for personalized health insights</p>
+            </div>
+
+            <form id="signup-form" class="space-y-6">
+                <div class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label for="signup-firstname" class="block text-sm font-medium text-gray-300 mb-2">First Name</label>
+                            <input 
+                                type="text" 
+                                id="signup-firstname" 
+                                name="first_name"
+                                required
+                                class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                                placeholder="First name"
+                            />
+                        </div>
+                        <div>
+                            <label for="signup-lastname" class="block text-sm font-medium text-gray-300 mb-2">Last Name</label>
+                            <input 
+                                type="text" 
+                                id="signup-lastname" 
+                                name="last_name"
+                                required
+                                class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                                placeholder="Last name"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label for="signup-email" class="block text-sm font-medium text-gray-300 mb-2">Email</label>
+                        <input 
+                            type="email" 
+                            id="signup-email" 
+                            name="email"
+                            required
+                            class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                            placeholder="Enter your email"
+                        />
+                    </div>
+                    <div>
+                        <label for="signup-password" class="block text-sm font-medium text-gray-300 mb-2">Password</label>
+                        <input 
+                            type="password" 
+                            id="signup-password" 
+                            name="password"
+                            required
+                            class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                            placeholder="Create a password"
+                        />
+                    </div>
+                    <div>
+                        <label for="signup-confirm-password" class="block text-sm font-medium text-gray-300 mb-2">Confirm Password</label>
+                        <input 
+                            type="password" 
+                            id="signup-confirm-password" 
+                            name="confirm_password"
+                            required
+                            class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200"
+                            placeholder="Confirm your password"
+                        />
+                    </div>
+                </div>
+
+                <div class="flex items-center">
+                    <input type="checkbox" id="terms-checkbox" required class="w-4 h-4 text-primary-600 bg-gray-700 border-gray-600 rounded focus:ring-primary-500">
+                    <label for="terms-checkbox" class="ml-2 text-sm text-gray-300">
+                        I agree to the <a href="#" class="text-primary-400 hover:text-primary-300">Terms of Service</a> and 
+                        <a href="#" class="text-primary-400 hover:text-primary-300">Privacy Policy</a>
+                    </label>
+                </div>
+
+                <button 
+                    type="submit" 
+                    id="signup-submit"
+                    class="w-full bg-gradient-to-r from-primary-600 to-primary-700 text-white py-3 px-4 rounded-lg font-medium hover:from-primary-700 hover:to-primary-800 focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-gray-800 transition-all duration-200 transform hover:scale-105"
+                >
+                    <span id="signup-submit-text">Create Account</span>
+                    <div id="signup-loading" class="hidden flex items-center justify-center">
+                        <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Creating account...
+                    </div>
+                </button>
+            </form>
+
+            <div class="mt-6 text-center">
+                <p class="text-gray-400">
+                    Already have an account? 
+                    <button id="show-login" class="text-primary-400 hover:text-primary-300 font-medium">Sign in</button>
+                </p>
+            </div>
+        </div>
+
+        <!-- Error/Success Messages -->
+        <div id="auth-message" class="hidden mt-4 p-4 rounded-lg">
+            <p id="auth-message-text"></p>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script>
+        // Initialize authentication when DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initialize API service
+            window.apiService = new APIService();
+            
+            // Initialize auth manager
+            window.authManager = new AuthManager();
+            
+            console.log('🔐 Authentication page initialized');
+        });
+    </script>
+</body>
+</html>

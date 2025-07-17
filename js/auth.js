@@ -52,28 +52,43 @@ class AuthManager {
         
         const email = document.getElementById('login-email').value;
         const password = document.getElementById('login-password').value;
-        const submitBtn = e.target.querySelector('button[type="submit"]');
+        const submitBtn = document.getElementById('login-submit');
 
         this.setLoading(submitBtn, true);
         this.clearMessages();
 
         try {
+            // Call the login service with the correct parameter format
             const response = await window.apiService.login(email, password);
             
-            // Store auth token and user data
-            window.apiService.setToken(response.token || response.access_token);
-            this.currentUser = response.user;
-            localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
+            if (response.access_token) {
+                // Store auth token
+                window.apiService.setToken(response.access_token);
+                
+                // Get user profile with the token
+                try {
+                    const userProfile = await window.apiService.getProfile();
+                    this.currentUser = userProfile;
+                    localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
+                } catch (profileError) {
+                    console.warn('Could not fetch profile, using response data:', profileError);
+                    this.currentUser = response.user || { email: email };
+                    localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
+                }
 
-            this.showSuccess('Login successful! Redirecting...');
-            
-            // Redirect to dashboard after short delay
-            setTimeout(() => {
-                this.showDashboard();
-            }, 1000);
+                this.showSuccess('Login successful! Redirecting...');
+                
+                // Redirect to dashboard after short delay
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 1500);
+            } else {
+                throw new Error(response.message || 'Login failed');
+            }
 
         } catch (error) {
-            this.showError(error.message || 'Login failed. Please try again.');
+            console.error('Login error:', error);
+            this.showError(error.message || 'Login failed. Please check your credentials.');
         } finally {
             this.setLoading(submitBtn, false);
         }
@@ -82,13 +97,12 @@ class AuthManager {
     async handleSignup(e) {
         e.preventDefault();
         
-        const username = document.getElementById('signup-username').value;
         const firstName = document.getElementById('signup-firstname').value;
         const lastName = document.getElementById('signup-lastname').value;
         const email = document.getElementById('signup-email').value;
         const password = document.getElementById('signup-password').value;
-        const confirmPassword = document.getElementById('signup-confirm').value;
-        const submitBtn = e.target.querySelector('button[type="submit"]');
+        const confirmPassword = document.getElementById('signup-confirm-password').value;
+        const submitBtn = document.getElementById('signup-submit');
 
         this.setLoading(submitBtn, true);
         this.clearMessages();
@@ -102,7 +116,6 @@ class AuthManager {
 
         try {
             const userData = {
-                username,
                 first_name: firstName,
                 last_name: lastName,
                 email,
@@ -119,6 +132,7 @@ class AuthManager {
             }, 2000);
 
         } catch (error) {
+            console.error('Signup error:', error);
             this.showError(error.message || 'Signup failed. Please try again.');
         } finally {
             this.setLoading(submitBtn, false);
@@ -158,15 +172,25 @@ class AuthManager {
     }
 
     showLoginPage() {
-        this.hideAllPages();
-        document.getElementById('login-page').classList.add('active');
-        document.title = 'MediTwin - Login';
+        const loginContainer = document.getElementById('login-container');
+        const signupContainer = document.getElementById('signup-container');
+        
+        if (loginContainer && signupContainer) {
+            loginContainer.classList.remove('hidden');
+            signupContainer.classList.add('hidden');
+        }
+        this.clearMessages();
     }
 
     showSignupPage() {
-        this.hideAllPages();
-        document.getElementById('signup-page').classList.add('active');
-        document.title = 'MediTwin - Sign Up';
+        const loginContainer = document.getElementById('login-container');
+        const signupContainer = document.getElementById('signup-container');
+        
+        if (loginContainer && signupContainer) {
+            loginContainer.classList.add('hidden');
+            signupContainer.classList.remove('hidden');
+        }
+        this.clearMessages();
     }
 
     showDashboard() {
@@ -217,12 +241,17 @@ class AuthManager {
     }
 
     setLoading(button, loading) {
+        const loadingElement = button.querySelector('[id$="-loading"]');
+        const textElement = button.querySelector('[id$="-text"]');
+        
         if (loading) {
-            button.classList.add('loading');
             button.disabled = true;
+            if (loadingElement) loadingElement.classList.remove('hidden');
+            if (textElement) textElement.classList.add('hidden');
         } else {
-            button.classList.remove('loading');
             button.disabled = false;
+            if (loadingElement) loadingElement.classList.add('hidden');
+            if (textElement) textElement.classList.remove('hidden');
         }
     }
 
@@ -235,24 +264,32 @@ class AuthManager {
     }
 
     showMessage(message, type) {
-        // Remove existing messages
-        this.clearMessages();
-
-        // Create message element
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `${type}-message`;
-        messageDiv.textContent = message;
-
-        // Find active form and prepend message
-        const activeForm = document.querySelector('.auth-container.active .auth-form');
-        if (activeForm) {
-            activeForm.insertBefore(messageDiv, activeForm.firstChild);
+        const messageElement = document.getElementById('auth-message');
+        const messageText = document.getElementById('auth-message-text');
+        
+        if (messageElement && messageText) {
+            messageElement.className = `mt-4 p-4 rounded-lg ${
+                type === 'error' 
+                    ? 'bg-red-900 border border-red-700 text-red-300' 
+                    : 'bg-green-900 border border-green-700 text-green-300'
+            }`;
+            messageText.textContent = message;
+            messageElement.classList.remove('hidden');
+            
+            // Auto-hide success messages after 5 seconds
+            if (type === 'success') {
+                setTimeout(() => {
+                    messageElement.classList.add('hidden');
+                }, 5000);
+            }
         }
     }
 
     clearMessages() {
-        const messages = document.querySelectorAll('.error-message, .success-message');
-        messages.forEach(msg => msg.remove());
+        const messageElement = document.getElementById('auth-message');
+        if (messageElement) {
+            messageElement.classList.add('hidden');
+        }
     }
 
     getCurrentUser() {

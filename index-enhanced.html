@@ -81,42 +81,21 @@
                 <span>Settings</span>
               </div>
             </li>
-            <li class="nav-item">
-              <div id="agent-test-btn" class="flex items-center px-4 py-3 text-gray-300 hover:bg-primary-600 hover:text-white rounded-lg cursor-pointer transition-all duration-200">
-                <svg class="h-5 w-5 mr-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-                </svg>
-                <span>Test Agents</span>
-              </div>
-            </li>
           </ul>
         </nav>
       </div>
       
-      <!-- Bottom: Doctor's Profile with Logout -->
-      <div class="px-6 py-4 border-t border-gray-700">          <div class="flex items-center justify-between">
-            <div class="flex items-center">
-              <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-                <span class="text-white font-semibold text-sm" id="user-initials">DE</span>
-              </div>
-              <div class="ml-3">
-                <p class="text-white text-sm font-medium" id="user-display-name">Dr. Ericsson</p>
-                <p class="text-gray-400 text-xs" id="user-role">Specialist</p>
-              </div>
-            </div>
-            <div class="flex space-x-2">
-              <button id="auth-status-btn" class="text-gray-400 hover:text-white transition-colors" title="Auth Status">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.707 3.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7a1 1 0 010-1.414l7-7a1 1 0 011.414 0l7 7a1 1 0 010 1.414z"/>
-                </svg>
-              </button>
-              <button id="logout-btn" class="text-gray-400 hover:text-white transition-colors" title="Logout">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
-                </svg>
-              </button>
-            </div>
+      <!-- Bottom: Doctor's Profile -->
+      <div class="px-6 py-4 border-t border-gray-700">
+        <div class="flex items-center">
+          <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+            <span class="text-white font-semibold text-sm">DE</span>
           </div>
+          <div class="ml-3">
+            <p class="text-white text-sm font-medium">Dr. Ericsson</p>
+            <p class="text-gray-400 text-xs">Specialist</p>
+          </div>
+        </div>
       </div>
     </aside>
 
@@ -370,92 +349,9 @@
   </div>
 
   <!-- Scripts -->
-  <script src="js/config.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/auth.js"></script>
   <script src="mock-api.js"></script>
   <script src="js/digital-twin-config.js"></script>
   <script src="js/digital-twin-api.js"></script>
-  <script src="js/chat.js"></script>
-  <script src="js/agent-tester.js"></script>
-  <script src="app.js"></script>
-  <script>
-    // Initialize services when DOM is loaded
-    document.addEventListener('DOMContentLoaded', () => {
-      // Check authentication first
-      const token = localStorage.getItem('authToken');
-      const currentUser = localStorage.getItem('currentUser');
-      
-      if (!token || !currentUser) {
-        // Not authenticated, redirect to auth page
-        window.location.href = 'auth.html';
-        return;
-      }
-      
-      // Initialize API service
-      window.apiService = new APIService();
-      
-      // Set the token from storage
-      window.apiService.setToken(token);
-      
-      // Initialize auth manager
-      window.authManager = new AuthManager();
-      
-      // Initialize chat manager
-      window.chatManager = new ChatManager();
-      
-      // Initialize enhanced dashboard
-      window.enhancedDashboard = new EnhancedHealthDashboard();
-      
-      // Add agent testing panel event
-      document.getElementById('agent-test-btn').addEventListener('click', () => {
-        window.agentServiceTester.showPanel();
-      });
-      
-      // Add auth status panel event
-      document.getElementById('auth-status-btn').addEventListener('click', () => {
-        showAuthStatus();
-      });
-      
-      // Update user profile display
-      updateUserProfileDisplay();
-      
-      console.log('🎉 All services initialized successfully');
-    });
-    
-    function updateUserProfileDisplay() {
-      const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-      const token = localStorage.getItem('authToken');
-      
-      if (currentUser.first_name && currentUser.last_name) {
-        const initials = (currentUser.first_name.charAt(0) + currentUser.last_name.charAt(0)).toUpperCase();
-        const fullName = `${currentUser.first_name} ${currentUser.last_name}`;
-        
-        document.getElementById('user-initials').textContent = initials;
-        document.getElementById('user-display-name').textContent = fullName;
-      }
-      
-      if (currentUser.email) {
-        document.getElementById('user-role').textContent = currentUser.email;
-      }
-    }
-    
-    function showAuthStatus() {
-      const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
-      const token = localStorage.getItem('authToken');
-      
-      const statusInfo = {
-        authenticated: !!token,
-        user: currentUser,
-        token_length: token ? token.length : 0,
-        services: {
-          login_service: 'https://lenient-sunny-grouse.ngrok-free.app',
-          agent_service: 'https://mackerel-liberal-loosely.ngrok-free.app'
-        }
-      };
-      
-      alert(`Authentication Status:\n\n${JSON.stringify(statusInfo, null, 2)}`);
-    }
-  </script>
+  <script src="app-enhanced.js"></script>
 </body>
 </html>
