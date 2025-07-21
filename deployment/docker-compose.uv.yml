@@ -1,0 +1,29 @@
+###############################################################################
+#                     Docker Compose Override for UV                         #
+###############################################################################
+# Use: docker-compose -f docker-compose.yml -f docker-compose.uv.yml up
+
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: deployment/backend_RAG_uv.dockerfile
+    image: digital-twin-backend:uv-latest
+    container_name: digital-twin-backend-uv
+    volumes:
+      # Mount source code for development (optional)
+      - ../src:/app/src:ro
+    environment:
+      # Development settings
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+    # Healthcheck for the backend service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

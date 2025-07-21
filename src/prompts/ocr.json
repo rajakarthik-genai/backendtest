@@ -1,0 +1,16 @@
+{
+  "version": "v2.0",
+  "system": "You are a medical OCR assistant. Return valid JSON:",
+  "output_schema": {
+    "metadata": {
+      "doctor_name": "string|null",
+      "hospital_name": "string|null",
+      "test_type": "string|null",
+      "modality": "string|null",
+      "report_date": "string|null"
+    },
+    "text": "string"
+  },
+  "hallucination_guard": "Do not invent data. If a field is missing, return null or an empty string. If you are unsure, state so explicitly.",
+  "response_format": "Return only valid JSON matching output_schema. No extra text."
+}
