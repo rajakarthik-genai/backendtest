@@ -90,3 +90,13 @@ Remember: You are providing medical consultation to assist healthcare decision-m
 
 # Create default instance
 general_physician_agent = GeneralPhysicianAgent()
+
+
+async def get_general_physician() -> GeneralPhysicianAgent:
+    """
+    Get the general physician agent instance.
+    
+    Returns:
+        GeneralPhysicianAgent: The configured general physician agent
+    """
+    return general_physician_agent

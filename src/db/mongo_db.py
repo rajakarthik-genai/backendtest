@@ -696,66 +696,270 @@ class MongoDB:
             return []
 
     async def delete_user_data(self, user_id: str) -> Dict[str, Any]:
-        """Delete all data for a specific user from MongoDB."""
+        """Delete all data for a user."""
         if not self._initialized:
             raise RuntimeError("MongoDB not initialized")
         
         try:
             hashed_user_id = self._hash_user_id(user_id)
+            
             deletion_results = {}
             
-            # Delete from medical_records collection
-            medical_records_result = await self.db.medical_records.delete_many({
-                "user_id": hashed_user_id
-            })
-            deletion_results["medical_records"] = medical_records_result.deleted_count
-            
-            # Delete from timeline_events collection
-            timeline_events_result = await self.db.timeline_events.delete_many({
-                "user_id": hashed_user_id
-            })
-            deletion_results["timeline_events"] = timeline_events_result.deleted_count
-            
-            # Delete from document_metadata collection
-            document_metadata_result = await self.db.document_metadata.delete_many({
-                "user_id": hashed_user_id
-            })
-            deletion_results["document_metadata"] = document_metadata_result.deleted_count
-            
-            # Delete from user_pii collection
-            user_pii_result = await self.db.user_pii.delete_one({
-                "user_id": hashed_user_id
-            })
-            deletion_results["user_pii"] = user_pii_result.deleted_count
-            
-            # Delete from clinical_records collection if it exists
+            # Delete medical records
             try:
-                clinical_records_result = await self.db.clinical_records.delete_many({
-                    "user_id": hashed_user_id
-                })
-                deletion_results["clinical_records"] = clinical_records_result.deleted_count
+                result = await self.db.medical_records.delete_many({"user_id": hashed_user_id})
+                deletion_results["medical_records"] = result.deleted_count
             except Exception as e:
-                logger.warning(f"Could not delete from clinical_records: {e}")
-                deletion_results["clinical_records"] = 0
+                deletion_results["medical_records"] = {"error": str(e)}
             
-            total_deleted = sum(deletion_results.values())
+            # Delete timeline events
+            try:
+                result = await self.db.timeline_events.delete_many({"user_id": hashed_user_id})
+                deletion_results["timeline_events"] = result.deleted_count
+            except Exception as e:
+                deletion_results["timeline_events"] = {"error": str(e)}
             
-            logger.info(f"Deleted MongoDB data for user {user_id[:8]}...: {deletion_results}")
+            # Delete user PII
+            try:
+                result = await self.db.user_pii.delete_many({"user_id": hashed_user_id})
+                deletion_results["user_pii"] = result.deleted_count
+            except Exception as e:
+                deletion_results["user_pii"] = {"error": str(e)}
             
-            return {
-                "success": total_deleted > 0,
-                "total_deleted": total_deleted,
-                "breakdown": deletion_results
-            }
+            # Delete clinical records
+            try:
+                result = await self.db.clinical_records.delete_many({"user_id": hashed_user_id})
+                deletion_results["clinical_records"] = result.deleted_count
+            except Exception as e:
+                deletion_results["clinical_records"] = {"error": str(e)}
+            
+            # Delete reports
+            try:
+                result = await self.db.reports.delete_many({"user_id": hashed_user_id})
+                deletion_results["reports"] = result.deleted_count
+            except Exception as e:
+                deletion_results["reports"] = {"error": str(e)}
+            
+            logger.info(f"Deleted user data for {user_id[:8]}...")
+            return deletion_results
             
         except Exception as e:
-            logger.error(f"Failed to delete user data from MongoDB: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "total_deleted": 0,
-                "breakdown": {}
+            logger.error(f"Failed to delete user data: {e}")
+            raise
+
+    async def store_report(self, user_id: str, report_data: Dict[str, Any]) -> str:
+        """Store a generated report."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            report_record = {
+                "user_id": hashed_user_id,
+                "report_id": report_data.get("report_id"),
+                "title": report_data.get("title"),
+                "content": report_data.get("content"),
+                "report_type": report_data.get("report_type"),
+                "generated_at": report_data.get("generated_at"),
+                "file_size": report_data.get("file_size", 0),
+                "timestamp": datetime.utcnow(),
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
             }
+            
+            result = await self.db.reports.insert_one(report_record)
+            
+            logger.info(f"Report stored for user {user_id[:8]}...")
+            return str(result.inserted_id)
+            
+        except Exception as e:
+            logger.error(f"Failed to store report: {e}")
+            raise
+
+    async def get_reports(
+        self,
+        user_id: str,
+        limit: int = 20,
+        skip: int = 0,
+        report_type: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Get reports for a user."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            query = {"user_id": hashed_user_id}
+            if report_type:
+                query["report_type"] = report_type
+            
+            cursor = self.db.reports.find(query).sort("timestamp", -1).skip(skip).limit(limit)
+            reports = await cursor.to_list(length=limit)
+            
+            # Remove user_id from response for security
+            for report in reports:
+                report.pop("user_id", None)
+                report["_id"] = str(report["_id"])
+            
+            return reports
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve reports: {e}")
+            return []
+
+    async def get_report(self, user_id: str, report_id: str) -> Optional[Dict[str, Any]]:
+        """Get a specific report by ID."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            report = await self.db.reports.find_one({
+                "user_id": hashed_user_id,
+                "report_id": report_id
+            })
+            
+            if report:
+                # Remove user_id from response for security
+                report.pop("user_id", None)
+                report["_id"] = str(report["_id"])
+                return report
+            
+            return None
+            
+            except Exception as e:
+            logger.error(f"Failed to retrieve report: {e}")
+            return None
+
+    async def get_report_status(self, user_id: str, report_id: str) -> Optional[Dict[str, Any]]:
+        """Get status of a report generation."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            report = await self.db.reports.find_one({
+                "user_id": hashed_user_id,
+                "report_id": report_id
+            })
+            
+            if report:
+            return {
+                    "report_id": report.get("report_id"),
+                    "status": "completed",
+                    "progress": 100.0,
+                    "message": "Report generation completed",
+                    "generated_at": report.get("generated_at")
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve report status: {e}")
+            return None
+
+    async def store_document_metadata(self, user_id: str, document_metadata: Dict[str, Any]) -> str:
+        """Store document metadata."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            document_record = {
+                "user_id": hashed_user_id,
+                **document_metadata,
+                "timestamp": datetime.utcnow(),
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            }
+            
+            result = await self.db.documents.insert_one(document_record)
+            
+            logger.info(f"Document metadata stored for user {user_id[:8]}...")
+            return str(result.inserted_id)
+            
+        except Exception as e:
+            logger.error(f"Failed to store document metadata: {e}")
+            raise
+
+    async def get_documents_status(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get status of all documents for a user."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            cursor = self.db.documents.find({"user_id": hashed_user_id}).sort("timestamp", -1)
+            documents = await cursor.to_list(length=100)
+            
+            # Remove user_id from response for security
+            for doc in documents:
+                doc.pop("user_id", None)
+                doc["_id"] = str(doc["_id"])
+            
+            return documents
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve documents status: {e}")
+            return []
+
+    async def get_document_status(self, user_id: str, document_id: str) -> Optional[Dict[str, Any]]:
+        """Get status of a specific document."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            document = await self.db.documents.find_one({
+                "user_id": hashed_user_id,
+                "document_id": document_id
+            })
+            
+            if document:
+                # Remove user_id from response for security
+                document.pop("user_id", None)
+                document["_id"] = str(document["_id"])
+                return document
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve document status: {e}")
+            return None
+
+    async def update_document_status(self, user_id: str, document_id: str, status: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """Update status of a document."""
+        if not self._initialized:
+            raise RuntimeError("MongoDB not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            update_data = {
+                "status": status,
+                "updated_at": datetime.utcnow()
+            }
+            
+            if metadata:
+                update_data.update(metadata)
+            
+            result = await self.db.documents.update_one(
+                {"user_id": hashed_user_id, "document_id": document_id},
+                {"$set": update_data}
+            )
+            
+            return result.modified_count > 0
+            
+        except Exception as e:
+            logger.error(f"Failed to update document status: {e}")
+            return False
 
 
 # Global MongoDB instance

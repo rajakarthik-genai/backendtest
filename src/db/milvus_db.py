@@ -90,7 +90,7 @@ class MilvusDB:
                 self.collection = Collection(self.collection_name)
                 logger.info(f"Connected to existing collection: {self.collection_name}")
             else:
-                self._create_collection()
+                self._create_collection(self.collection_name)
                 logger.info(f"Created new collection: {self.collection_name}")
             
             # Load collection into memory
@@ -98,75 +98,6 @@ class MilvusDB:
             
         except Exception as e:
             logger.error(f"Failed to initialize collection: {e}")
-            raise
-    
-    def _create_collection(self):
-        """Create new Milvus collection with schema."""
-        try:
-            fields = [
-                FieldSchema(
-                    name="id",
-                    dtype=DataType.INT64,
-                    is_primary=True,
-                    auto_id=True
-                ),
-                FieldSchema(
-                    name="user_id_hash",
-                    dtype=DataType.VARCHAR,
-                    max_length=64
-                ),
-                FieldSchema(
-                    name="document_id",
-                    dtype=DataType.VARCHAR,
-                    max_length=64
-                ),
-                FieldSchema(
-                    name="content",
-                    dtype=DataType.VARCHAR,
-                    max_length=65535
-                ),
-                FieldSchema(
-                    name="embedding",
-                    dtype=DataType.FLOAT_VECTOR,
-                    dim=self.embedding_dim
-                ),
-                FieldSchema(
-                    name="metadata",
-                    dtype=DataType.JSON
-                ),
-                FieldSchema(
-                    name="timestamp",
-                    dtype=DataType.VARCHAR,
-                    max_length=32
-                )
-            ]
-            
-            schema = CollectionSchema(
-                fields,
-                description="Medical knowledge embeddings with user isolation"
-            )
-            
-            self.collection = Collection(
-                name=self.collection_name,
-                schema=schema
-            )
-            
-            # Create index for vector similarity search
-            index_params = {
-                "index_type": "IVF_FLAT",
-                "metric_type": "L2",
-                "params": {"nlist": 1024}
-            }
-            
-            self.collection.create_index(
-                field_name="embedding",
-                index_params=index_params
-            )
-            
-            logger.info("Milvus collection and index created")
-            
-        except Exception as e:
-            logger.error(f"Failed to create collection: {e}")
             raise
     
     def _hash_user_id(self, user_id: str, secret_key: str = None) -> str:
@@ -471,29 +402,25 @@ class MilvusDB:
         try:
             # Define collection schema
             fields = [
-                FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=False),
-                FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=1536),  # OpenAI embedding dimension
-                FieldSchema(name="patient_id", dtype=DataType.VARCHAR, max_length=255),
-                FieldSchema(name="document_id", dtype=DataType.VARCHAR, max_length=255),
-                FieldSchema(name="section", dtype=DataType.VARCHAR, max_length=100),
-                FieldSchema(name="chunk_type", dtype=DataType.VARCHAR, max_length=100),
-                FieldSchema(name="text_length", dtype=DataType.INT64),
-                FieldSchema(name="document_date", dtype=DataType.VARCHAR, max_length=50),
-                FieldSchema(name="embedding_model", dtype=DataType.VARCHAR, max_length=100),
-                FieldSchema(name="embedded_at", dtype=DataType.VARCHAR, max_length=50),
-                FieldSchema(name="metadata_json", dtype=DataType.VARCHAR, max_length=10000)
+                FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
+                FieldSchema(name="user_id_hash", dtype=DataType.VARCHAR, max_length=64),
+                FieldSchema(name="document_id", dtype=DataType.VARCHAR, max_length=64),
+                FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=65535),
+                FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=self.embedding_dim),
+                FieldSchema(name="metadata", dtype=DataType.JSON),
+                FieldSchema(name="timestamp", dtype=DataType.VARCHAR, max_length=32)
             ]
             
             schema = CollectionSchema(fields, f"Medical documents collection: {collection_name}")
-            collection = Collection(collection_name, schema)
+            self.collection = Collection(collection_name, schema)
             
             # Create index for vector field
             index_params = {
-                "metric_type": "IP",  # Inner Product for OpenAI embeddings
-                "index_type": "IVF_FLAT",
+                "metric_type": "L2",
+                "index_type": "IVF_FLAT", 
                 "params": {"nlist": 1024}
             }
-            collection.create_index("vector", index_params)
+            self.collection.create_index("embedding", index_params)
             
             logger.info(f"Created Milvus collection: {collection_name}")
             

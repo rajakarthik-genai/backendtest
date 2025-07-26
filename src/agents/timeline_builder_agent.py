@@ -194,9 +194,18 @@ class TimelineBuilder:
         """Generate LLM analysis of timeline events."""
         try:
             # Use the versioned, robust prompt
+            instructions_text = "\n".join(TIMELINE_SUMMARY_PROMPT['instructions'])
+            focus_text = "\n".join(TIMELINE_SUMMARY_PROMPT['focus'])
+            
             system_prompt = f"""{TIMELINE_SUMMARY_PROMPT['system']}
 
-INSTRUCTIONS:\n" + "\n".join(TIMELINE_SUMMARY_PROMPT['instructions']) + "\n\nFocus on:\n" + "\n".join(TIMELINE_SUMMARY_PROMPT['focus']) + f"\n\n{TIMELINE_SUMMARY_PROMPT['hallucination_guard']}"
+INSTRUCTIONS:
+{instructions_text}
+
+Focus on:
+{focus_text}
+
+{TIMELINE_SUMMARY_PROMPT['hallucination_guard']}"""
             body_part_context = f"\n\nFocus specifically on events related to: {body_part_filter}" if body_part_filter else ""
             user_prompt = f"""Analyze this medical timeline:{body_part_context}
 
@@ -260,7 +269,11 @@ Provide a structured analysis following the specified schema."""
                 event_desc = event.get('description', 'No description')
                 event_severity = event.get('severity', 'unknown')
                 
-                events_text += f"- {event_date}: {event_title} ({event_severity})\n  {event_desc}\n\n"
+                # Safely escape any problematic characters
+                safe_title = str(event_title).replace('"', "'").replace('\n', ' ')[:100]
+                safe_desc = str(event_desc).replace('"', "'").replace('\n', ' ')[:200]
+                
+                events_text += f"- {event_date}: {safe_title} ({event_severity})\n  {safe_desc}\n\n"
             
             # Create AI prompt for yearly summary
             prompt = f"""

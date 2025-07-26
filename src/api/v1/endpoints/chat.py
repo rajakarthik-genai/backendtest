@@ -1,282 +1,129 @@
 """
-Chat endpoints for real-time conversation with medical agents.
-
-Features:
-- Streaming chat responses (SSE)
-- Multi-agent orchestration
-- Chat history management
-- User isolation and security
+Chat endpoints for personalized medical conversations with streaming responses.
 """
 
 import json
 import uuid
 from datetime import datetime
-from typing import AsyncGenerator, Dict, Any
+from typing import AsyncGenerator, Dict, Any, Optional
 
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
+from pydantic import BaseModel, Field
 
-from src.utils.schema import ChatRequest, ChatResponse
 from src.utils.logging import logger, log_user_action
 from src.agents.orchestrator_agent import get_orchestrator
 from src.chat.short_term import get_short_term_memory
+from src.chat.long_term import get_long_term_memory
 from src.db.redis_db import get_redis
 from src.db.mongo_db import get_mongo
-from src.auth.dependencies import AuthenticatedPatientId, CurrentUser
-from src.auth.models import User
+from src.db.neo4j_db import get_graph
+from src.db.milvus_db import get_milvus
+from src.auth.dependencies import CurrentUser
 
 router = APIRouter(tags=["chat"])
 
 
-@router.post("/message")
-async def send_message(
-    request: ChatRequest, 
-    current_user: CurrentUser
-) -> ChatResponse:
-    """
-    Send a chat message and get a response.
-    
-    Non-streaming endpoint for simple request-response interactions.
-    """
-    try:
-        # Get patient_id from JWT token
-        patient_id = current_user.patient_id
-        
-        # Generate session ID if not provided
-        session_id = request.session_id or str(uuid.uuid4())
-        
-        # Log user action
-        log_user_action(
-            patient_id,
-            "chat_message",
-            {"session_id": session_id, "message_length": len(request.message)}
-        )
-        
-        # Get orchestrator and process message
-        orchestrator = await get_orchestrator()
-        response = await orchestrator.process_user_message(
-            patient_id=patient_id,
-            session_id=session_id,
-            message=request.message
-        )
-        
-        # Store conversation in memory
-        redis_client = get_redis()
-        
-        # Store user message with TTL
-        redis_client.store_chat_message(
-            patient_id,
-            session_id,
-            {
-                "role": "user",
-                "content": request.message,
-                "timestamp": datetime.utcnow().isoformat()
-            },
-            ttl_hours=24
-        )
-        # Persist user message to MongoDB
-        mongo_client = await get_mongo()
-        await mongo_client.store_medical_record(
-            user_id=patient_id,
-            record_data={
-                "session_id": session_id,
-                "role": "user",
-                "content": request.message,
-                "timestamp": datetime.utcnow().isoformat(),
-                "record_type": "chat_message"
-            },
-            record_type="chat_message"
-        )
-        # Store assistant response with TTL
-        redis_client.store_chat_message(
-            patient_id,
-            session_id,
-            {
-                "role": "assistant", 
-                "content": response["content"],
-                "timestamp": datetime.utcnow().isoformat(),
-                "metadata": response.get("metadata", {})
-            },
-            ttl_hours=24
-        )
-        # Persist assistant response to MongoDB
-        await mongo_client.store_medical_record(
-            user_id=patient_id,
-            record_data={
-                "session_id": session_id,
-                "role": "assistant",
-                "content": response["content"],
-                "timestamp": datetime.utcnow().isoformat(),
-                "metadata": response.get("metadata", {}),
-                "record_type": "chat_message"
-            },
-            record_type="chat_message"
-        )
-        
-        # Fallback: If chat history is empty, try to fetch from MongoDB and repopulate Redis
-        history = redis_client.get_chat_history(patient_id, session_id, 50)
-        if not history:
-            from src.db.mongo_db import get_mongo
-            mongo_client = await get_mongo()
-            records = await mongo_client.get_medical_records(user_id=patient_id, limit=50)
-            for rec in records:
-                msg = {
-                    "role": rec.get("role", "user"),
-                    "content": rec.get("content", ""),
-                    "timestamp": rec.get("timestamp", "")
-                }
-                redis_client.store_chat_message(patient_id, session_id, msg, ttl_hours=24)
-        
-        return ChatResponse(
-            response=response["content"],
-            session_id=session_id,
-            metadata=response.get("metadata", {})
-        )
-        
-    except Exception as e:
-        logger.error(f"Chat message failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to process message")
+class ChatRequest(BaseModel):
+    """Model for chat requests."""
+    message: str = Field(..., min_length=1, max_length=5000, description="User message")
+    session_id: Optional[str] = Field(None, description="Chat session ID")
 
 
-@router.post("/stream")
-async def stream_chat(
+class ChatResponse(BaseModel):
+    """Model for chat responses."""
+    session_id: str = Field(description="Chat session ID")
+    message: str = Field(description="AI response")
+    timestamp: str = Field(description="Response timestamp")
+    context_used: Dict[str, Any] = Field(description="Context information used")
+
+
+@router.post("/message", response_class=StreamingResponse)
+async def chat_message(
     request: ChatRequest,
     current_user: CurrentUser
 ):
     """
-    Stream chat responses using Server-Sent Events (SSE).
+    Send a message and get a personalized streaming response.
     
-    Enables real-time streaming of agent responses for better UX.
+    Uses:
+    - Short-term memory (current session)
+    - Long-term memory (historical conversations)
+    - Similarity search (document content)
+    - Neo4j relationship search (medical knowledge graph)
+    - Patient-specific context
     """
     try:
-        # Get patient_id from JWT token
         patient_id = current_user.patient_id
+        session_id = request.session_id or f"session_{patient_id}_{int(datetime.utcnow().timestamp())}"
         
-        # Generate session ID if not provided
-        session_id = request.session_id or str(uuid.uuid4())
+        # Get all context sources
+        context = await gather_patient_context(patient_id, request.message, session_id)
         
-        # Log user action
-        log_user_action(
-            patient_id,
-            "chat_stream",
-            {"session_id": session_id, "message_length": len(request.message)}
-        )
+        # Get orchestrator for processing
+        orchestrator = await get_orchestrator()
         
-        # Store user message immediately
-        redis_client = get_redis()
-        redis_client.store_chat_message(
-            patient_id,
-            session_id,
-            {
-                "role": "user",
-                "content": request.message,
-                "timestamp": datetime.utcnow().isoformat()
-            },
-            ttl_hours=24
-        )
-        
-        # Fallback: If chat history is empty, try to fetch from MongoDB and repopulate Redis
-        history = redis_client.get_chat_history(patient_id, session_id, 50)
-        if not history:
-            from src.db.mongo_db import get_mongo
-            mongo_client = await get_mongo()
-            records = await mongo_client.get_medical_records(user_id=patient_id, limit=50)
-            for rec in records:
-                msg = {
-                    "role": rec.get("role", "user"),
-                    "content": rec.get("content", ""),
-                    "timestamp": rec.get("timestamp", "")
-                }
-                redis_client.store_chat_message(patient_id, session_id, msg, ttl_hours=24)
-        
-        async def event_generator() -> AsyncGenerator[str, None]:
-            """Generate SSE events for streaming response."""
+        # Process message with context
+        async def generate_response():
             try:
-                orchestrator = await get_orchestrator()
+                # Send initial response
+                yield f"data: {json.dumps({'type': 'start', 'session_id': session_id})}\n\n"
                 
-                # Send initial metadata
-                yield f"data: {json.dumps({'type': 'metadata', 'session_id': session_id})}\n\n"
-                
-                full_response = ""
-                
-                # Stream response chunks
-                async for chunk in orchestrator.stream_response(
+                # Process with orchestrator
+                response = await orchestrator.process_user_message(
                     patient_id=patient_id,
                     session_id=session_id,
-                    message=request.message
-                ):
-                    if chunk.get("type") == "content":
-                        content = chunk.get("content", "")
-                        full_response += content
-                        
-                        # Send content chunk
-                        yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
-                    
-                    elif chunk.get("type") == "metadata":
-                        # Send metadata updates
-                        yield f"data: {json.dumps(chunk)}\n\n"
-                
-                # Store complete response
-                redis_client.store_chat_message(
-                    patient_id,
-                    session_id,
-                    {
-                        "role": "assistant",
-                        "content": full_response,
-                        "timestamp": datetime.utcnow().isoformat()
-                    },
-                    ttl_hours=24
+                    message=request.message,
+                    context=context
                 )
                 
+                # Stream the response in chunks
+                content = response.get("content", "I'm sorry, I couldn't process your request.")
+                
+                # Split into chunks for streaming
+                chunk_size = 50
+                for i in range(0, len(content), chunk_size):
+                    chunk = content[i:i + chunk_size]
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+                
                 # Send completion signal
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                yield f"data: {json.dumps({'type': 'complete', 'session_id': session_id})}\n\n"
+                
+                # Store in memory
+                await store_chat_memory(patient_id, session_id, request.message, content, context)
                 
             except Exception as e:
-                logger.error(f"Streaming error: {e}")
-                yield f"data: {json.dumps({'type': 'error', 'message': 'Internal server error'})}\n\n"
+                logger.error(f"Chat streaming error: {e}")
+                error_msg = f"data: {json.dumps({'type': 'error', 'message': 'An error occurred while processing your request.'})}\n\n"
+                yield error_msg
         
-        return EventSourceResponse(
-            event_generator(),
-            media_type="text/event-stream",
+        return StreamingResponse(
+            generate_response(),
+            media_type="text/plain",
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "Access-Control-Allow-Origin": "*"
+                "Content-Type": "text/event-stream"
             }
         )
         
     except Exception as e:
-        logger.error(f"Stream setup failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to setup stream")
+        logger.error(f"Chat message processing failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process message")
 
 
 @router.get("/history/{session_id}")
-async def get_chat_history(
-    session_id: str,
-    current_user: CurrentUser,
-    limit: int = 50
-):
+async def get_chat_history(session_id: str, current_user: CurrentUser):
     """
-    Retrieve chat history for a specific session.
-    
-    Args:
-        session_id: Chat session identifier
-        current_user: Authenticated user from JWT token
-        limit: Maximum number of messages to return
+    Get chat history for a specific session.
     """
     try:
-        # Get patient_id from JWT token
         patient_id = current_user.patient_id
         
-        redis_client = get_redis()
-        
-        # Get chat history from Redis
-        history = redis_client.get_chat_history(
-            patient_id,
-            session_id,
-            limit
-        )
+        # Get short-term memory for this session
+        short_term = get_short_term_memory()
+        history = short_term.get_session_history(patient_id, session_id)
         
         return {
             "session_id": session_id,
@@ -289,70 +136,100 @@ async def get_chat_history(
         raise HTTPException(status_code=500, detail="Failed to retrieve chat history")
 
 
-@router.delete("/history/{session_id}")
-async def clear_chat_history(
-    session_id: str,
-    current_user: CurrentUser
-):
-    """
-    Clear chat history for a specific session.
+async def gather_patient_context(patient_id: str, message: str, session_id: str) -> Dict[str, Any]:
+    """Gather all relevant context for the patient."""
+    context = {
+        "patient_id": patient_id,
+        "session_id": session_id,
+        "timestamp": datetime.utcnow().isoformat(),
+        "short_term_memory": [],
+        "long_term_memory": [],
+        "similar_documents": [],
+        "knowledge_graph": [],
+        "medical_entities": []
+    }
     
-    Args:
-        session_id: Chat session identifier
-        current_user: Authenticated user from JWT token
-    """
     try:
-        # Get patient_id from JWT token
-        patient_id = current_user.patient_id
+        # 1. Get short-term memory (current session)
+        short_term = get_short_term_memory()
+        context["short_term_memory"] = short_term.get_session_history(patient_id, session_id, limit=10)
         
+        # 2. Get long-term memory (historical conversations)
+        long_term = get_long_term_memory()
+        context["long_term_memory"] = long_term.get_relevant_history(patient_id, message, limit=5)
+        
+        # 3. Similarity search in documents
+        try:
+            milvus_client = get_milvus()
+            similar_docs = await milvus_client.search_similar_documents(patient_id, message, limit=3)
+            context["similar_documents"] = similar_docs
+        except Exception as e:
+            logger.warning(f"Similarity search failed: {e}")
+        
+        # 4. Neo4j knowledge graph search
+        try:
+            neo4j_client = get_graph()
+            knowledge_results = neo4j_client.search_medical_knowledge(patient_id, message, limit=5)
+            context["knowledge_graph"] = knowledge_results
+        except Exception as e:
+            logger.warning(f"Knowledge graph search failed: {e}")
+        
+        # 5. Extract medical entities from message
+        try:
+            from src.agents.medical_entity_extractor import extract_entities
+            entities = extract_entities(message)
+            context["medical_entities"] = entities
+        except Exception as e:
+            logger.warning(f"Entity extraction failed: {e}")
+        
+    except Exception as e:
+        logger.error(f"Context gathering failed: {e}")
+    
+    return context
+
+
+async def store_chat_memory(patient_id: str, session_id: str, user_message: str, ai_response: str, context: Dict[str, Any]):
+    """Store chat interaction in memory systems."""
+    try:
+        # Store in short-term memory
+        short_term = get_short_term_memory()
+        short_term.store_message(patient_id, session_id, "user", user_message)
+        short_term.store_message(patient_id, session_id, "assistant", ai_response)
+        
+        # Store in long-term memory
+        long_term = get_long_term_memory()
+        long_term.store_interaction(patient_id, user_message, ai_response, context)
+        
+        # Store in Redis for persistence
         redis_client = get_redis()
-        
-        # Delete chat history
-        success = redis_client.delete_user_data(user_id)
-        
-        if success:
-            log_user_action(patient_id, "chat_history_cleared", {"session_id": session_id})
-            return {"message": "Chat history cleared successfully"}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to clear chat history")
-        
-    except Exception as e:
-        logger.error(f"Failed to clear chat history: {e}")
-        raise HTTPException(status_code=500, detail="Failed to clear chat history")
-
-
-@router.get("/sessions")
-async def get_user_sessions(current_user: CurrentUser):
-    """
-    Get all chat sessions for a user.
-    
-    Args:
-        current_user: Authenticated user from JWT token
-    """
-    try:
-        # Get patient_id from JWT token
-        patient_id = current_user.patient_id
-        
-        # This would typically query a sessions database
-        # For now, return a placeholder response
-        return {
-            "patient_id": patient_id,
-            "sessions": [],
-            "message": "Session management not fully implemented"
-        }
+        redis_client.store_chat_message(patient_id, session_id, {
+            "role": "user",
+            "content": user_message,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        redis_client.store_chat_message(patient_id, session_id, {
+            "role": "assistant", 
+            "content": ai_response,
+            "timestamp": datetime.utcnow().isoformat()
+        })
         
     except Exception as e:
-        logger.error(f"Failed to get user sessions: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve sessions")
+        logger.error(f"Failed to store chat memory: {e}")
 
 
-@router.post("/chat")
-async def basic_chat(
-    request: ChatRequest, 
-    current_user: CurrentUser
-) -> ChatResponse:
-    """
-    Basic chat endpoint for frontend compatibility.
-    This is an alias for the /message endpoint.
-    """
-    return await send_message(request, current_user)
+@router.get("/health")
+async def get_chat_health():
+    """Health check for chat service."""
+    return {
+        "status": "healthy",
+        "service": "chat",
+        "version": "1.0.0",
+        "features": [
+            "Streaming responses",
+            "Short-term memory",
+            "Long-term memory", 
+            "Similarity search",
+            "Knowledge graph integration",
+            "Medical entity extraction"
+        ]
+    }

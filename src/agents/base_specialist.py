@@ -21,7 +21,8 @@ from enum import Enum
 from src.config.settings import settings
 from src.tools import web_search, knowledge_graph, document_db, get_vector_store
 from src.db.mongo_db import get_mongo
-from src.db.neo4j_db import get_graph
+# Delay neo4j import to avoid circular dependency
+# from src.db.neo4j_db import get_graph
 from src.utils.logging import logger
 from openai import AsyncOpenAI
 
@@ -283,7 +284,7 @@ class BaseSpecialist(ABC):
             # Parse the response to extract structured components
             opinion = self._parse_opinion(final_content, tool_calls)
             
-            logger.info(f"{self.specialty.value} specialist provided opinion for user {user_id}")
+            logger.info(f"{self.specialty.value} specialist provided opinion for patient {patient_id}")
             
             return opinion
             
@@ -537,6 +538,8 @@ class BaseSpecialist(ABC):
     async def _knowledge_graph_query(self, query: str, patient_id: str) -> str:
         """Query the knowledge graph for patient information with enhanced medical event support."""
         try:
+            # Import here to avoid circular dependency
+            from src.db.neo4j_db import get_graph
             graph_db = get_graph()
             
             # Ensure user is initialized
@@ -550,11 +553,11 @@ class BaseSpecialist(ABC):
             context = {}
             
             # Get body part severities
-            severities = graph_db.get_body_part_severities(user_id)
+            severities = graph_db.get_body_part_severities(patient_id)
             context["body_part_severities"] = severities
             
             # Get recent timeline events
-            timeline = graph_db.get_patient_timeline(user_id, limit=20)
+            timeline = graph_db.get_patient_timeline(patient_id, limit=20)
             context["recent_events"] = timeline
             
             # If specific body parts mentioned, get detailed history
@@ -562,7 +565,7 @@ class BaseSpecialist(ABC):
                 body_part_details = {}
                 for body_part in mentioned_body_parts:
                     try:
-                        history = graph_db.get_body_part_history(user_id, body_part, limit=10)
+                        history = graph_db.get_body_part_history(patient_id, body_part, limit=10)
                         if history:
                             body_part_details[body_part] = {
                                 "current_severity": severities.get(body_part, "NA"),
@@ -601,7 +604,7 @@ class BaseSpecialist(ABC):
         try:
             mongo_client = await get_mongo()
             # Search for relevant documents/records
-            records = await mongo_client.get_medical_records(user_id)
+            records = await mongo_client.get_medical_records(patient_id)
             if records:
                 return json.dumps({"found_records": len(records), "summary": "Medical records available"})
             else:
@@ -609,6 +612,36 @@ class BaseSpecialist(ABC):
         except Exception as e:
             logger.error(f"Document search failed: {e}")
             return f"Document search unavailable: {str(e)}"
+    
+    async def analyze_query(
+        self,
+        patient_id: str,
+        query: str,
+        context: Optional[Dict] = None
+    ) -> str:
+        """
+        Analyze a user query and provide medical opinion.
+        
+        This is an alias for get_opinion() to maintain compatibility.
+        
+        Args:
+            patient_id: Patient identifier
+            query: User's medical question
+            context: Optional conversation context
+            
+        Returns:
+            Medical opinion as string
+        """
+        try:
+            opinion = await self.get_opinion(
+                patient_id=patient_id,
+                question=query,
+                context=context
+            )
+            return opinion.primary_assessment
+        except Exception as e:
+            logger.error(f"Error in analyze_query: {e}")
+            return f"I apologize, but I encountered an error while analyzing your query: {str(e)}"
 
 def create_specialist(specialty: SpecialtyType, custom_prompt: Optional[str] = None) -> BaseSpecialist:
     """

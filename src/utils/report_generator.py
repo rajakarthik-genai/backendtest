@@ -26,28 +26,32 @@ class HealthReportGenerator:
     
     def setup_custom_styles(self):
         """Setup custom styles for the report."""
-        self.styles.add(ParagraphStyle(
-            name='CustomTitle',
-            parent=self.styles['Heading1'],
-            fontSize=24,
-            spaceAfter=30,
-            alignment=TA_CENTER
-        ))
+        # Only add styles if they don't already exist
+        if 'CustomTitle' not in self.styles:
+            self.styles.add(ParagraphStyle(
+                name='CustomTitle',
+                parent=self.styles['Heading1'],
+                fontSize=24,
+                spaceAfter=30,
+                alignment=TA_CENTER
+            ))
         
-        self.styles.add(ParagraphStyle(
-            name='SectionHeader',
-            parent=self.styles['Heading2'], 
-            fontSize=16,
-            spaceAfter=12,
-            textColor=colors.darkblue
-        ))
+        if 'SectionHeader' not in self.styles:
+            self.styles.add(ParagraphStyle(
+                name='SectionHeader',
+                parent=self.styles['Heading2'], 
+                fontSize=16,
+                spaceAfter=12,
+                textColor=colors.darkblue
+            ))
         
-        self.styles.add(ParagraphStyle(
-            name='BodyText',
-            parent=self.styles['Normal'],
-            fontSize=11,
-            spaceAfter=6
-        ))
+        if 'BodyText' not in self.styles:
+            self.styles.add(ParagraphStyle(
+                name='BodyText',
+                parent=self.styles['Normal'],
+                fontSize=11,
+                spaceAfter=6
+            ))
     
     async def generate_health_report(
         self, 

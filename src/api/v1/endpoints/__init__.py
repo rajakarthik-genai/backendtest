@@ -17,3 +17,6 @@ from .system_info import router as system_info  # noqa: F401
 from .user_profile import router as user_profile  # noqa: F401
 from .knowledge_base import router as knowledge_base  # noqa: F401
 from .medical_analysis import router as medical_analysis  # noqa: F401
+from .export import router as export  # noqa: F401
+from .body_parts import router as body_parts  # noqa: F401
+from .reports import router as reports  # noqa: F401

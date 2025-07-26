@@ -326,6 +326,68 @@ class Neo4jDB:
         except Exception as e:
             logger.error(f"Failed to get body part history: {e}")
             return []
+
+    def get_body_part_timeline(self, user_id: str, body_part: str, start_date=None, end_date=None, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get timeline of events for a specific body part with optional date filtering."""
+        if not self._initialized:
+            raise RuntimeError("Neo4j not initialized")
+        
+        try:
+            hashed_user_id = self._hash_user_id(user_id)
+            
+            # Build date filter if provided
+            date_filter = ""
+            params = {
+                "patient_id": hashed_user_id,
+                "body_part": body_part,
+                "limit": limit
+            }
+            
+            if start_date and end_date:
+                date_filter = "AND e.timestamp >= $start_date AND e.timestamp <= $end_date"
+                params["start_date"] = start_date.isoformat()
+                params["end_date"] = end_date.isoformat()
+            elif start_date:
+                date_filter = "AND e.timestamp >= $start_date"
+                params["start_date"] = start_date.isoformat()
+            elif end_date:
+                date_filter = "AND e.timestamp <= $end_date"
+                params["end_date"] = end_date.isoformat()
+            
+            with self.driver.session() as session:
+                query = f"""
+                MATCH (p:Patient {{patient_id: $patient_id}})-[:HAS_EVENT]->(e:Event)-[:AFFECTS]->(b:BodyPart {{name: $body_part, patient_id: $patient_id}})
+                WHERE 1=1 {date_filter}
+                RETURN e.event_id as event_id,
+                       e.title as title,
+                       e.description as description,
+                       e.timestamp as timestamp,
+                       e.severity as severity,
+                       e.event_type as type,
+                       e.source as source
+                ORDER BY e.timestamp DESC
+                LIMIT $limit
+                """
+                
+                result = session.run(query, params)
+                
+                events = []
+                for record in result:
+                    events.append({
+                        "event_id": record["event_id"],
+                        "title": record["title"],
+                        "description": record["description"],
+                        "timestamp": record["timestamp"],
+                        "severity": record["severity"],
+                        "type": record["type"],
+                        "source": record["source"]
+                    })
+                
+                return events
+                
+        except Exception as e:
+            logger.error(f"Failed to get body part timeline: {e}")
+            return []
     
     def get_related_conditions(self, user_id: str, condition: str) -> List[Dict[str, Any]]:
         """Find related medical conditions through body part connections."""
