@@ -11,7 +11,7 @@ import secrets
 import string
 from typing import Optional
 
-from src.config.settings import settings
+from src.core.config import settings
 from src.utils.logging import logger
 
 
@@ -27,7 +27,7 @@ class PatientIdManager:
     """
     
     def __init__(self):
-        self.salt = settings.patient_id_salt
+        self.salt = settings.PATIENT_ID_SALT
         
     def generate_patient_id_from_user_id(self, user_id: str) -> str:
         """

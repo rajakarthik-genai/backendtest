@@ -11,7 +11,7 @@ from typing import List, Dict, Optional, AsyncGenerator, Any
 from dataclasses import dataclass
 from openai import AsyncOpenAI
 
-from src.config.settings import settings
+from src.core.config import settings
 from src.utils.logging import logger
 from src.agents.base_specialist import SpecialistOpinion
 from src.prompts import get_agent_prompt

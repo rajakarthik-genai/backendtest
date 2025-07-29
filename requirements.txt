@@ -20,6 +20,9 @@ agentops>=0.4
 crewai>=0.118
 httpx-sse>=0.4
 python-multipart>=0.0.6
+aiofiles>=23.2.1
+prometheus-client>=0.19.0
+slowapi>=0.1.9
 sse-starlette==2.3.6
 langchain-neo4j
 langchain>=0.1.0

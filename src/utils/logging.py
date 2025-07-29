@@ -14,10 +14,10 @@ import time
 from typing import Any, Dict
 from fastapi import Request, Response
 
-from src.config.settings import settings
+from src.core.config import settings
 
 # Set logging level based on debug setting
-_level = logging.DEBUG if settings.debug else logging.INFO
+_level = logging.DEBUG if settings.DEBUG else logging.INFO
 
 # Configure root logger
 logging.basicConfig(

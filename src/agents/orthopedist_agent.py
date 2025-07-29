@@ -8,7 +8,7 @@ consultation for bone, joint, muscle, and connective tissue conditions.
 import json
 from typing import Optional
 from src.agents.base_specialist import BaseSpecialist, SpecialtyType
-from src.config.settings import settings
+from src.core.config import settings
 from src.utils.logging import logger
 
 
@@ -152,5 +152,10 @@ SPECIAL CONSIDERATIONS:
 Remember: Focus on accurate diagnosis, appropriate imaging, and evidence-based treatment decisions. Consider both operative and non-operative options, with emphasis on functional outcomes and patient goals. Always assess for urgent conditions requiring immediate intervention."""
 
 
-# Create default instance
+# Factory function for creating orthopedist instances
+def get_orthopedist_agent(custom_prompt: Optional[str] = None) -> OrthopedistAgent:
+    """Get an orthopedist agent instance."""
+    return OrthopedistAgent(custom_prompt)
+
+# Default instance for backward compatibility
 orthopedist_agent = OrthopedistAgent()

@@ -35,7 +35,7 @@ def get_authenticated_patient_id(request: Request) -> str:
         
         # Fall back to a default patient for testing/development
         # In production, this should raise an exception
-        from src.config.settings import settings
+        from src.core.config import settings
         if not getattr(settings, 'jwt_require_auth', True):
             # Convert test user to patient_id
             return get_patient_id_from_user_id("test_user_123")
@@ -70,7 +70,7 @@ def get_authenticated_user_id(request: Request) -> str:
         
         # Fall back to a default user for testing/development
         # In production, this should raise an exception
-        from src.config.settings import settings
+        from src.core.config import settings
         if not getattr(settings, 'jwt_require_auth', True):
             return "test_user_123"  # Default user for development
         
@@ -96,7 +96,7 @@ async def get_current_user_dependency(request: Request) -> User:
     Handles both authenticated and unauthenticated scenarios based on settings.
     """
     # Import here to avoid circular import issues
-    from src.config.settings import settings
+    from src.core.config import settings
     
     # Check if auth is required
     require_auth = getattr(settings, 'jwt_require_auth', True)

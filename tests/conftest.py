@@ -11,7 +11,7 @@ from httpx import AsyncClient
 from fastapi.testclient import TestClient
 
 from src.main import app
-from src.config.settings import settings
+from src.core.config import settings
 
 
 @pytest.fixture(scope="session")

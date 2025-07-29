@@ -12,9 +12,8 @@ from typing import Optional
 from fastapi import HTTPException, Request, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from src.config.settings import settings
-from src.utils.logging import logger
-from src.utils.patient_id import get_patient_id_from_user_id
+from src.core.config import settings
+from src.core.logging import logger
 from .models import User, TokenData
 
 
@@ -72,8 +71,8 @@ def verify_token(token: str) -> bool:
     try:
         payload = jwt.decode(
             token,
-            settings.jwt_secret_key,
-            algorithms=[settings.jwt_algorithm]
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM]
         )
         
         # Check expiration
@@ -109,8 +108,8 @@ def decode_token(token: str) -> Optional[TokenData]:
     try:
         payload = jwt.decode(
             token,
-            settings.jwt_secret_key,
-            algorithms=[settings.jwt_algorithm]
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM]
         )
         
         # Support both user_id (legacy) and sub (standard) formats

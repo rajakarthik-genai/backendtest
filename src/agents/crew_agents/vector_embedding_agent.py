@@ -13,7 +13,7 @@ from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
 from src.utils.logging import logger
-from src.db.milvus_db import get_milvus
+from src.db.milvus_client import MilvusClient
 
 
 class TextChunk(BaseModel):
@@ -263,7 +263,7 @@ class EmbeddingGeneratorTool(BaseTool):
         """Generate embeddings for text chunks."""
         try:
             import openai
-            from src.config.settings import settings
+            from src.core.config import settings
             
             logger.info(f"Generating embeddings for {len(chunks)} chunks")
             
@@ -329,7 +329,8 @@ class MilvusStorageTool(BaseTool):
         try:
             logger.info(f"Storing {len(embeddings)} embeddings in Milvus")
             
-            milvus_client = get_milvus()
+            milvus = MilvusClient()
+            await milvus.initialize_collections()
             
             # Prepare data for insertion
             entities = []

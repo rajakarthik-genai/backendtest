@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, AsyncGenerator, Any
 from dataclasses import dataclass
 from enum import Enum
 
-from src.config.settings import settings
+from src.core.config import settings
 from src.tools import web_search, knowledge_graph, document_db, get_vector_store
 from src.db.mongo_db import get_mongo
 # Delay neo4j import to avoid circular dependency
@@ -220,7 +220,7 @@ class BaseSpecialist(ABC):
         try:
             # Initial reasoning phase
             response = await client.chat.completions.create(
-                model=settings.openai_model_chat,  # Use configured model
+                model=settings.OPENAI_MODEL_COMPLEX,  # Use configured model
                 messages=messages,
                 tools=self.tools_schema,
                 tool_choice="auto",
@@ -268,7 +268,7 @@ class BaseSpecialist(ABC):
                 
                 # Get next response with tool results
                 response = await client.chat.completions.create(
-                    model=settings.openai_model_chat,  # Use configured model
+                    model=settings.OPENAI_MODEL_COMPLEX,  # Use configured model
                     messages=messages,
                     tools=self.tools_schema,
                     tool_choice="auto",
@@ -330,7 +330,7 @@ class BaseSpecialist(ABC):
             }
             
             stream = await client.chat.completions.create(
-                model=settings.openai_model_chat,  # Use configured model
+                model=settings.OPENAI_MODEL_COMPLEX,  # Use configured model
                 messages=messages,
                 tools=self.tools_schema,
                 tool_choice="auto",

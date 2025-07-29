@@ -37,7 +37,7 @@ class ExpertConsultationCrew:
             
             # Determine which specialists to consult
             if not specialties:
-                specialties = self._determine_relevant_specialties(message, context)
+                specialties = await self._determine_relevant_specialties(message, context)
             
             # Get individual specialist opinions
             specialist_opinions = []
@@ -77,40 +77,44 @@ class ExpertConsultationCrew:
                 "error": str(e)
             }
     
-    def _determine_relevant_specialties(self, message: str, context: Dict[str, Any]) -> List[str]:
-        """Determine which specialties are relevant based on the message and context."""
-        message_lower = message.lower()
-        relevant_specialties = []
+    async def _determine_relevant_specialties(self, message: str, context: Dict[str, Any]) -> List[str]:
+        """Use LLM to dynamically determine relevant specialties."""
+        from openai import AsyncOpenAI
+        from src.core.config import settings
         
-        # Simple keyword-based specialty selection
-        specialty_keywords = {
-            "cardiology": ["heart", "cardiac", "chest pain", "cardiovascular", "blood pressure", "hypertension"],
-            "endocrinology": ["diabetes", "thyroid", "hormone", "insulin", "blood sugar", "endocrine"],
-            "neurology": ["brain", "headache", "seizure", "stroke", "nervous system", "neurological"],
-            "orthopedics": ["bone", "joint", "fracture", "arthritis", "muscle", "skeletal"],
-            "dermatology": ["skin", "rash", "acne", "dermatological", "lesion", "mole"],
-            "gastroenterology": ["stomach", "digestive", "nausea", "vomiting", "abdominal", "gastrointestinal"],
-            "pulmonology": ["lung", "breathing", "respiratory", "cough", "asthma", "pneumonia"],
-            "nephrology": ["kidney", "renal", "urinary", "dialysis", "nephrological"],
-            "rheumatology": ["arthritis", "rheumatoid", "autoimmune", "joint pain", "inflammation"],
-            "oncology": ["cancer", "tumor", "oncology", "malignant", "chemotherapy"],
-            "psychiatry": ["mental", "depression", "anxiety", "psychiatric", "mood", "behavior"],
-            "pediatrics": ["child", "pediatric", "infant", "baby", "adolescent"],
-            "geriatrics": ["elderly", "aging", "geriatric", "senior", "old age"],
-            "emergency_medicine": ["emergency", "urgent", "acute", "trauma", "critical"],
-            "general_medicine": ["general", "primary care", "overall health", "wellness"]
-        }
+        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         
-        for specialty, keywords in specialty_keywords.items():
-            if any(keyword in message_lower for keyword in keywords):
-                relevant_specialties.append(specialty)
+        specialty_prompt = f"""
+You are a medical triage specialist. Analyze the patient query and determine which medical specialties should be consulted.
+
+Available specialties: {', '.join(self.specialists)}
+
+Patient Query: "{message}"
+
+Context: {json.dumps(context.get('user_profile', {}), indent=2) if context else 'None'}
+
+Return ONLY a JSON array of 1-3 most relevant specialties, e.g., ["cardiology", "neurology"]
+If unsure, include "general_medicine".
+"""
         
-        # If no specific specialties found, default to general medicine
-        if not relevant_specialties:
-            relevant_specialties = ["general_medicine"]
-        
-        # Limit to top 3 most relevant
-        return relevant_specialties[:3]
+        try:
+            response = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": specialty_prompt}],
+                temperature=0.1,
+                max_tokens=100
+            )
+            
+            result = response.choices[0].message.content.strip()
+            specialties = json.loads(result)
+            
+            # Validate specialties
+            valid_specialties = [s for s in specialties if s in self.specialists]
+            return valid_specialties[:3] if valid_specialties else ["general_medicine"]
+            
+        except Exception as e:
+            logger.error(f"LLM specialty selection failed: {e}")
+            return ["general_medicine"]
     
     async def _get_specialist_opinion(
         self,
@@ -126,7 +130,7 @@ class ExpertConsultationCrew:
             await asyncio.sleep(0.1)  # Simulate processing time
             
             # Generate specialist-specific response
-            opinion = self._generate_specialist_opinion(specialty, message, context)
+            opinion = await self._generate_specialist_opinion(specialty, message, context)
             
             return {
                 "specialist": specialty,
@@ -148,74 +152,99 @@ class ExpertConsultationCrew:
                 "error": str(e)
             }
     
-    def _generate_specialist_opinion(self, specialty: str, message: str, context: Dict[str, Any]) -> str:
-        """Generate a specialist-specific opinion."""
-        message_lower = message.lower()
+    async def _generate_specialist_opinion(self, specialty: str, message: str, context: Dict[str, Any]) -> str:
+        """Generate LLM-driven specialist opinion."""
+        from openai import AsyncOpenAI
+        from src.core.config import settings
         
-        # Generate specialty-specific responses
-        if specialty == "cardiology":
-            if any(word in message_lower for word in ["chest pain", "heart", "cardiac"]):
-                return "From a cardiology perspective, chest pain requires immediate evaluation. I recommend seeking emergency medical attention to rule out acute coronary syndrome. Key considerations include the nature, duration, and associated symptoms of the pain."
-            else:
-                return "From a cardiology standpoint, I don't see any immediate cardiac concerns in this case. However, regular cardiovascular health monitoring is always recommended."
+        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         
-        elif specialty == "neurology":
-            if any(word in message_lower for word in ["headache", "brain", "seizure", "stroke"]):
-                return "From a neurological perspective, this case requires careful evaluation. I would recommend a thorough neurological examination and potentially imaging studies to assess for any underlying neurological conditions."
-            else:
-                return "From a neurological standpoint, I don't identify any immediate neurological concerns. Regular neurological health monitoring is recommended."
+        # Build context string
+        context_str = ""
+        if context:
+            if context.get('user_profile'):
+                context_str += f"Patient Profile: {json.dumps(context['user_profile'], indent=2)}\n"
+            if context.get('medical_history'):
+                context_str += f"Medical History: {context['medical_history'][:500]}\n"
+            if context.get('current_body_part_status'):
+                context_str += f"Current Health Status: {context['current_body_part_status']}\n"
         
-        elif specialty == "endocrinology":
-            if any(word in message_lower for word in ["diabetes", "thyroid", "hormone", "blood sugar"]):
-                return "From an endocrinology perspective, this case suggests potential endocrine system involvement. I recommend comprehensive metabolic testing and hormone level evaluation to assess endocrine function."
-            else:
-                return "From an endocrinology standpoint, I don't see any immediate endocrine concerns. Regular metabolic health monitoring is recommended."
+        specialist_prompt = f"""
+You are a board-certified {specialty.replace('_', ' ')} specialist providing a medical consultation.
+
+Patient Query: "{message}"
+
+{context_str if context_str else 'No additional context available.'}
+
+Provide a professional medical opinion from your specialty perspective. Include:
+1. Assessment of the case from your specialty viewpoint
+2. Relevant considerations and risk factors
+3. Recommended next steps or referrals
+4. Any red flags or urgent concerns
+
+Keep response concise (2-3 paragraphs) and professional. Always recommend consulting healthcare providers for proper diagnosis and treatment.
+"""
         
-        elif specialty == "pulmonology":
-            if any(word in message_lower for word in ["breathing", "lung", "cough", "respiratory"]):
-                return "From a pulmonology perspective, respiratory symptoms require careful evaluation. I recommend pulmonary function testing and potentially chest imaging to assess respiratory health."
-            else:
-                return "From a pulmonology standpoint, I don't identify any immediate respiratory concerns. Regular respiratory health monitoring is recommended."
-        
-        else:
-            # General response for other specialties
-            return f"From a {specialty.replace('_', ' ')} perspective, this case requires careful consideration. I recommend a thorough evaluation and appropriate diagnostic testing to ensure comprehensive care."
+        try:
+            response = await client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": specialist_prompt}],
+                temperature=0.3,
+                max_tokens=400
+            )
+            
+            return response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            logger.error(f"LLM opinion generation failed for {specialty}: {e}")
+            return f"From a {specialty.replace('_', ' ')} perspective, this case requires careful consideration. I recommend consulting with a qualified healthcare provider for proper evaluation and treatment planning."
     
     async def _aggregate_opinions(self, specialist_opinions: List[Dict[str, Any]], original_message: str) -> str:
-        """Aggregate multiple specialist opinions into a comprehensive response."""
+        """Use LLM to intelligently aggregate specialist opinions."""
+        from openai import AsyncOpenAI
+        from src.core.config import settings
+        
         try:
             if not specialist_opinions:
                 return "I apologize, but I was unable to obtain specialist opinions for your case. Please try again or consult with a healthcare provider directly."
             
-            # Build aggregated response
-            response_parts = [
-                "Based on the consultation with multiple medical specialists, here is our comprehensive assessment:",
-                "",
-                "**Specialist Opinions:**"
-            ]
+            client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
             
-            for opinion in specialist_opinions:
-                specialist_name = opinion["specialist"].replace("_", " ").title()
-                response_parts.append(f"- **{specialist_name}**: {opinion['opinion']}")
-            
-            response_parts.extend([
-                "",
-                "**Overall Assessment:**",
-                "The specialists have provided their perspectives on your case. While each specialist focuses on their area of expertise, the consensus suggests that your symptoms warrant appropriate medical evaluation.",
-                "",
-                "**Recommendations:**",
-                "1. Schedule an appointment with your primary care physician",
-                "2. Consider specialist referrals based on the identified concerns",
-                "3. Follow up on any recommended diagnostic tests",
-                "4. Maintain regular health monitoring",
-                "",
-                "**Important Note:** This consultation is for informational purposes only and should not replace professional medical advice. Please consult with qualified healthcare providers for proper diagnosis and treatment."
+            # Prepare opinions for aggregation
+            opinions_text = "\n\n".join([
+                f"**{op['specialist'].replace('_', ' ').title()} (Confidence: {op['confidence']}):**\n{op['opinion']}"
+                for op in specialist_opinions
             ])
             
-            return "\n".join(response_parts)
+            aggregation_prompt = f"""
+You are a medical case coordinator synthesizing multiple specialist opinions into a comprehensive assessment.
+
+Original Patient Query: "{original_message}"
+
+Specialist Opinions:
+{opinions_text}
+
+Synthesize these opinions into a cohesive, comprehensive response that:
+1. Identifies common themes and consensus points
+2. Highlights any conflicting opinions and explains why
+3. Provides clear, actionable next steps
+4. Maintains appropriate medical disclaimers
+5. Prioritizes urgent concerns if any
+
+Structure your response with clear sections and maintain a professional, reassuring tone.
+"""
+            
+            response = await client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": aggregation_prompt}],
+                temperature=0.2,
+                max_tokens=800
+            )
+            
+            return response.choices[0].message.content.strip()
             
         except Exception as e:
-            logger.error(f"Failed to aggregate opinions: {e}")
+            logger.error(f"LLM aggregation failed: {e}")
             return "I apologize, but I encountered an error while aggregating the specialist opinions. Please consult with a healthcare provider directly."
     
     def _calculate_confidence(self, specialist_opinions: List[Dict[str, Any]]) -> float:

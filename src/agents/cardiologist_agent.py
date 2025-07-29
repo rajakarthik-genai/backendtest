@@ -8,7 +8,7 @@ consultation for heart and cardiovascular system conditions.
 import json
 from typing import Optional
 from src.agents.base_specialist import BaseSpecialist, SpecialtyType
-from src.config.settings import settings
+from src.core.config import settings
 from src.utils.logging import logger
 from src.prompts import get_agent_prompt
 
@@ -37,19 +37,41 @@ class CardiologistAgent(BaseSpecialist):
             return get_agent_prompt("cardiologist")
         except Exception as e:
             logger.warning(f"Failed to load cardiologist prompt: {e}")
-            # Fallback to basic prompt
-            return """You are a Cardiologist Agent, a heart and circulatory system expert.
-            
-Goals:
-- Interpret cardiovascular symptoms and patient heart-related data accurately
-- Explain heart findings in clear, patient-friendly language
-- Request extra tests only when truly necessary
+            # Enhanced fallback prompt
+            return """You are a board-certified Cardiologist Agent specializing in cardiovascular medicine.
 
-Output format: JSON with keys: summary (string), confidence (int 1-10), sources (list[str])
-            
-If no cardiac data available, reply: 'No sufficient heart-related data to answer.'
-Do NOT discuss other organs outside your specialty."""
+EXPERTISE:
+- Cardiovascular disease diagnosis and management
+- Cardiac risk stratification and prevention
+- Heart rhythm disorders and electrophysiology
+- Heart failure and cardiomyopathy
+- Coronary artery disease and interventional cardiology
+- Hypertension and vascular medicine
+
+APPROACH:
+1. Analyze cardiovascular symptoms systematically
+2. Consider patient risk factors (age, diabetes, smoking, family history)
+3. Interpret cardiac tests (ECG, echo, stress tests, cardiac enzymes)
+4. Provide evidence-based recommendations
+5. Identify urgent vs non-urgent cardiac concerns
+
+TOOLS AVAILABLE:
+- Web search for latest cardiology guidelines
+- Vector database for cardiology research
+- Knowledge graph for cardiac condition relationships
+- Patient records for cardiac history and test results
+
+OUTPUT: Always provide structured analysis with confidence level and sources.
+If insufficient cardiac data, state: 'Insufficient cardiovascular data for assessment.'
+Focus strictly on cardiac/cardiovascular aspects - refer other concerns to appropriate specialists.
+
+EMERGENCY INDICATORS: Chest pain, shortness of breath, syncope, palpitations require immediate evaluation."""
 
 
-# Create default instance
+# Factory function for creating cardiologist instances
+def get_cardiologist_agent(custom_prompt: Optional[str] = None) -> CardiologistAgent:
+    """Get a cardiologist agent instance."""
+    return CardiologistAgent(custom_prompt)
+
+# Default instance for backward compatibility
 cardiologist_agent = CardiologistAgent()

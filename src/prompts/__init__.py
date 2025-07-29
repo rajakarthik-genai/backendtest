@@ -69,37 +69,72 @@ class PromptManager:
         try:
             prompt_data = self.load_prompt(f"{agent_type}_prompt")
             
-            # Build system prompt from the JSON structure
+            # Build comprehensive system prompt from enhanced JSON structure
             system_prompt_parts = []
             
+            # Agent identity and role
             if "agent" in prompt_data:
-                system_prompt_parts.append(f"Agent: {prompt_data['agent']}")
+                system_prompt_parts.append(f"**{prompt_data['agent']}**")
             
             if "role" in prompt_data:
                 system_prompt_parts.append(f"Role: {prompt_data['role']}")
             
+            # Goals and objectives
             if "goals" in prompt_data:
-                goals_text = "Goals:\n" + "\n".join(f"- {goal}" for goal in prompt_data['goals'])
+                goals_text = "**GOALS:**\n" + "\n".join(f"• {goal}" for goal in prompt_data['goals'])
                 system_prompt_parts.append(goals_text)
             
+            # Expertise areas
+            if "expertise_areas" in prompt_data:
+                expertise_text = "**EXPERTISE AREAS:**\n" + "\n".join(f"• {area}" for area in prompt_data['expertise_areas'])
+                system_prompt_parts.append(expertise_text)
+            
+            # Clinical approach
+            if "clinical_approach" in prompt_data:
+                approach_text = "**CLINICAL APPROACH:**\n" + "\n".join(f"• {approach}" for approach in prompt_data['clinical_approach'])
+                system_prompt_parts.append(approach_text)
+            
+            # Emergency recognition
+            if "emergency_recognition" in prompt_data:
+                emergency_text = "**EMERGENCY RECOGNITION:**\n" + "\n".join(f"• {emergency}" for emergency in prompt_data['emergency_recognition'])
+                system_prompt_parts.append(emergency_text)
+            
+            # Available tools
+            if "data_sources_via_tools" in prompt_data:
+                tools_text = "**AVAILABLE TOOLS:**\n"
+                for tool, description in prompt_data['data_sources_via_tools'].items():
+                    tools_text += f"• {tool}: {description}\n"
+                system_prompt_parts.append(tools_text.strip())
+            
+            # Communication tone
             if "tone" in prompt_data:
-                system_prompt_parts.append(f"Tone: {prompt_data['tone']}")
+                system_prompt_parts.append(f"**COMMUNICATION TONE:** {prompt_data['tone']}")
             
+            # Step-by-step reasoning
             if "step_by_step_reasoning" in prompt_data:
-                reasoning_text = "Step-by-step reasoning:\n" + "\n".join(prompt_data['step_by_step_reasoning'])
+                reasoning_text = "**CLINICAL REASONING PROCESS:**\n" + "\n".join(prompt_data['step_by_step_reasoning'])
                 system_prompt_parts.append(reasoning_text)
-            elif "logic" in prompt_data:
-                logic_text = "Logic:\n" + "\n".join(prompt_data['logic'])
-                system_prompt_parts.append(logic_text)
-            elif "workflow" in prompt_data:
-                workflow_text = "Workflow:\n" + "\n".join(prompt_data['workflow'])
-                system_prompt_parts.append(workflow_text)
+            elif "clinical_reasoning" in prompt_data:
+                reasoning_text = "**CLINICAL REASONING:**\n" + "\n".join(prompt_data['clinical_reasoning'])
+                system_prompt_parts.append(reasoning_text)
             
+            # Safety protocols
+            if "safety_protocols" in prompt_data:
+                safety_text = "**SAFETY PROTOCOLS:**\n" + "\n".join(f"• {protocol}" for protocol in prompt_data['safety_protocols'])
+                system_prompt_parts.append(safety_text)
+            
+            # Output requirements
             if "output_schema" in prompt_data:
-                system_prompt_parts.append(f"Output Schema: {prompt_data['output_schema']}")
+                system_prompt_parts.append(f"**OUTPUT FORMAT:** {prompt_data['output_schema']}")
             
+            # Hallucination guard
             if "hallucination_guard" in prompt_data:
-                system_prompt_parts.append(f"Important: {prompt_data['hallucination_guard']}")
+                system_prompt_parts.append(f"**CRITICAL SAFETY INSTRUCTION:** {prompt_data['hallucination_guard']}")
+            
+            # Add example if available
+            if "example_output" in prompt_data:
+                example_text = f"**EXAMPLE OUTPUT:**\n{json.dumps(prompt_data['example_output'], indent=2)}"
+                system_prompt_parts.append(example_text)
             
             return "\n\n".join(system_prompt_parts)
             
@@ -140,6 +175,30 @@ class PromptManager:
             return prompt_data.get("example_output")
         except Exception:
             return None
+    
+    def get_emergency_indicators(self, agent_type: str) -> List[str]:
+        """Get emergency recognition indicators for an agent type."""
+        try:
+            prompt_data = self.load_prompt(f"{agent_type}_prompt")
+            return prompt_data.get("emergency_recognition", [])
+        except Exception:
+            return []
+    
+    def get_safety_protocols(self, agent_type: str) -> List[str]:
+        """Get safety protocols for an agent type."""
+        try:
+            prompt_data = self.load_prompt(f"{agent_type}_prompt")
+            return prompt_data.get("safety_protocols", [])
+        except Exception:
+            return []
+    
+    def get_expertise_areas(self, agent_type: str) -> List[str]:
+        """Get expertise areas for an agent type."""
+        try:
+            prompt_data = self.load_prompt(f"{agent_type}_prompt")
+            return prompt_data.get("expertise_areas", [])
+        except Exception:
+            return []
     
     def clear_cache(self):
         """Clear the prompt cache."""

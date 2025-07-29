@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import AsyncGenerator, Dict, List, Any, Optional
 import asyncio
 
-from src.config.settings import settings
+from src.core.config import settings
 from src.utils.logging import logger, log_user_action
 from src.agents.expert_router import get_expert_router
 from src.agents.aggregator_agent import get_aggregator
@@ -39,7 +39,7 @@ class OrchestratorAgent:
     def __init__(self):
         """Initialize the orchestrator with system prompt."""
         self.system_prompt = self._get_system_prompt()
-        self.model = settings.openai_model_chat
+        self.model = settings.OPENAI_MODEL_COMPLEX
         self.session_contexts = {}  # Cache for session contexts
     
     def _get_system_prompt(self) -> str:

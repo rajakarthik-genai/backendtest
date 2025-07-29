@@ -31,6 +31,8 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         "/health",
         "/docs",
         "/redoc",
+        "/api/docs",
+        "/api/redoc",
         "/openapi.json"
     }
     

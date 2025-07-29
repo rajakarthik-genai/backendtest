@@ -1,160 +1,281 @@
 """
-FastAPI entry-point – starts app, connects to DBs, and mounts routers.
-
-Run via:
-    uvicorn src.main:app --host 0.0.0.0 --port 8000
-    
-Or directly:
-    python src/main.py --host 0.0.0.0 --port 8000
+Medical Digital Twin API - Main Application Entry Point
+Production-ready FastAPI application with comprehensive error handling
 """
+
+from fastapi import FastAPI, Request, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
+import logging
+import time
+from prometheus_client import Counter, Histogram, generate_latest
+from prometheus_client.core import CollectorRegistry
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
 
 import sys
 import os
+
 from pathlib import Path
 
-# Add the project root directory to Python path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+# Add project root to Python path BEFORE local imports
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-import agentops
-from src.config.settings import settings
-from src.api.router import main_router
-from src.utils.logging import logger
-from src.db.mongo_db import init_mongo
-from src.db.neo4j_db import init_graph
-from src.db.milvus_db import init_milvus
-from src.db.redis_db import init_redis
-from src.auth.middleware import JWTAuthMiddleware
-from src.middleware.request_logging import RequestLoggingMiddleware
-from src.middleware.user_initialization import UserInitializationMiddleware
+from src.core.limiter import limiter
 
-
-async def _startup():
-    """Initialize DB/tool connections and AgentOps."""
-    errors = []
-    
-    # Try to initialize databases (optional for development)
-    try:
-        await init_mongo(settings.mongo_uri, settings.mongo_db_name)
-        logger.info("MongoDB initialized successfully")
-    except Exception as e:
-        logger.warning(f"MongoDB initialization failed: {e}")
-        errors.append("MongoDB")
-    
-    try:
-        init_graph(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
-        logger.info("Neo4j initialized successfully")
-    except Exception as e:
-        logger.warning(f"Neo4j initialization failed: {e}")
-        errors.append("Neo4j")
-    
-    try:
-        init_milvus(settings.milvus_host, settings.milvus_port)
-        logger.info("Milvus initialized successfully")
-    except Exception as e:
-        logger.warning(f"Milvus initialization failed: {e}")
-        errors.append("Milvus")
-    
-    try:
-        init_redis(settings.redis_host, settings.redis_port)
-        logger.info("Redis initialized successfully")
-    except Exception as e:
-        logger.warning(f"Redis initialization failed: {e}")
-        errors.append("Redis")
-    
-    # Initialize AgentOps if API key provided
-    if settings.agentops_api_key:
-        try:
-            agentops.init(settings.agentops_api_key)
-            logger.info("AgentOps initialized")
-        except Exception as e:
-            logger.warning(f"AgentOps initialization failed: {e}")
-    
-    if errors:
-        logger.warning(f"Some services failed to initialize: {', '.join(errors)}")
-        logger.info("Server will run in limited mode (authentication and basic APIs only)")
-    else:
-        logger.info("All systems initialized successfully")
-    
-    logger.info("Server startup completed")
-
-
-app = FastAPI(
-    title="MediTwin Backend",
-    version="1.0.0",
-    description="HIPAA-compliant multi-agent RAG backend for personalized medical insights",
-    docs_url="/docs",
-    redoc_url="/redoc"
+from src.api.routers import (
+    documents, chat, expert_opinion, health, timeline, reports, visualization
 )
+from src.api.dependencies import security
+from src.core.config import settings
+from src.core.logging import setup_logging
+from src.db.mongodb import connect_to_mongo, close_mongo_connection
+from src.db.neo4j import neo4j_connection
+from src.db.redis_client import get_redis_client
+from src.db.milvus_client import MilvusClient
+from src.core.exceptions import MedicalTwinException
+
+# Setup logging
+logger = setup_logging()
+
+# Metrics
+REGISTRY = CollectorRegistry()
+REQUEST_COUNT = Counter(
+    'medical_api_requests_total', 
+    'Total requests',
+    ['method', 'endpoint', 'status'],
+    registry=REGISTRY
+)
+REQUEST_LATENCY = Histogram(
+    'medical_api_request_duration_seconds',
+    'Request latency',
+    ['method', 'endpoint'],
+    registry=REGISTRY
+)
+
+# Rate limiter instance will be stored in app.state
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifecycle"""
+    try:
+        # Startup
+        logger.info("Starting Medical Digital Twin API...")
+        
+        # Connect to databases
+        await connect_to_mongo()
+        await neo4j_connection.connect()
+        app.state.redis = await get_redis_client()
+
+        # Initialize Milvus
+        milvus_client = MilvusClient()
+        await milvus_client.initialize_collections()
+        app.state.milvus = milvus_client
+        
+        logger.info("Medical Digital Twin API started successfully")
+        
+        yield
+        
+    finally:
+        # Shutdown
+        logger.info("Shutting down Medical Digital Twin API...")
+        
+        # Close database connections
+        await close_mongo_connection()
+        await neo4j_connection.close()
+        await app.state.redis.close()
+        if hasattr(app.state, "milvus"):
+            app.state.milvus.close()
+        
+        logger.info("Medical Digital Twin API shutdown complete")
+
+# Create FastAPI app
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    description="Medical Digital Twin API with AI-powered health analysis",
+    lifespan=lifespan,
+    # Remove global security dependency - use individual endpoint authentication
+    # dependencies=[Depends(security)],
+    docs_url="/api/docs" if not settings.PRODUCTION else None,
+    redoc_url="/api/redoc" if not settings.PRODUCTION else None,
+)
+
+# -------------------------------------------------------------------
+# Customize OpenAPI to add global JWTBearer security requirement so
+# Swagger UI automatically sends the Authorization header once the
+# user clicks "Authorize".
+# -------------------------------------------------------------------
+from fastapi.openapi.utils import get_openapi
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    # Ensure only one HTTP bearer scheme exists
+    components = openapi_schema.setdefault("components", {})
+    security_schemes = components.setdefault("securitySchemes", {})
+    # Remove any autogenerated JWTBearer to avoid duplicates
+    security_schemes.pop("JWTBearer", None)
+    # Add/ensure single scheme named HTTPBearer
+    security_schemes["HTTPBearer"] = {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+    }
+    # Apply globally to all paths
+    openapi_schema["security"] = [{"HTTPBearer": []}]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
 )
 
-# Add request logging middleware
-app.add_middleware(RequestLoggingMiddleware, log_requests=True)
+# Add JWT authentication middleware to extract user_id from tokens
+from src.auth.middleware import JWTAuthMiddleware
+app.add_middleware(JWTAuthMiddleware, require_auth=True)
 
-# Add JWT authentication middleware  
-# NOTE: Set require_auth=True for production with proper JWT tokens
-# For development/testing, you can use require_auth=False
-jwt_require_auth = getattr(settings, 'jwt_require_auth', False)
-app.add_middleware(JWTAuthMiddleware, require_auth=jwt_require_auth)
+# Add rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Add user initialization middleware (after auth middleware)
-app.add_middleware(UserInitializationMiddleware)
+# Middleware for request tracking
+@app.middleware("http")
+async def track_requests(request: Request, call_next):
+    """Track request metrics and add request ID"""
+    start_time = time.time()
+    request_id = request.headers.get("X-Request-ID", f"req_{int(time.time() * 1000)}")
+    
+    # Add request ID to request state
+    request.state.request_id = request_id
+    
+    # Process request
+    response = await call_next(request)
+    
+    # Track metrics
+    duration = time.time() - start_time
+    REQUEST_COUNT.labels(
+        method=request.method,
+        endpoint=request.url.path,
+        status=response.status_code
+    ).inc()
+    REQUEST_LATENCY.labels(
+        method=request.method,
+        endpoint=request.url.path
+    ).observe(duration)
+    
+    # Add headers
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Process-Time"] = str(duration)
+    
+    return response
 
-# Attach main API router
-app.include_router(main_router)
+# Global exception handler
+@app.exception_handler(MedicalTwinException)
+async def medical_exception_handler(request: Request, exc: MedicalTwinException):
+    """Handle custom medical twin exceptions"""
+    logger.error(f"Medical Twin Exception: {exc.detail}", exc_info=True)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": exc.error_code,
+            "detail": exc.detail,
+            "request_id": getattr(request.state, "request_id", None)
+        }
+    )
 
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle general exceptions"""
+    logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "INTERNAL_ERROR",
+            "detail": "An internal error occurred. Please try again later.",
+            "request_id": getattr(request.state, "request_id", None)
+        }
+    )
 
-@app.on_event("startup")
-async def on_startup():
-    await _startup()
+# Include routers
+app.include_router(documents.router, prefix="/api/v1/documents", tags=["documents"])
+app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"])
+app.include_router(expert_opinion.router, prefix="/api/v1/expert-opinion", tags=["expert"])
+app.include_router(health.router, prefix="/api/v1/health", tags=["health"])
+app.include_router(timeline.router, prefix="/api/v1/timeline", tags=["timeline"])
+app.include_router(reports.router, prefix="/api/v1/reports", tags=["reports"])
+app.include_router(visualization.router, prefix="/api/v1/visualization", tags=["visualization"])
 
-
-@app.get("/", tags=["health"])
-async def health_check():
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "service": "MediTwin Backend",
-        "version": "1.0.0"
-    }
-
-
-@app.get("/health", tags=["health"])
-async def detailed_health():
-    """Detailed health check with system status."""
+# Health check endpoint
+@app.get("/health")
+@limiter.limit("100/minute")
+async def health_check(request: Request):
+    """Health check endpoint"""
     try:
-        # Basic health check - could be expanded to check DB connections
+        # Check database connections
+        redis_healthy = await app.state.redis.ping()
+        neo4j_healthy = neo4j_connection.verify_connectivity()
+        
+        status = "healthy" if all([redis_healthy, neo4j_healthy]) else "degraded"
+        
         return {
-            "status": "healthy",
-            "timestamp": "2024-01-01T00:00:00Z",
+            "status": status,
+            "version": settings.VERSION,
             "services": {
-                "api": "healthy",
-                "mongodb": "unknown",  # Could check connection
-                "neo4j": "unknown",
-                "milvus": "unknown", 
-                "redis": "unknown"
-            }
+                "mongodb": True,  # Assume healthy if no exception
+                "neo4j": neo4j_healthy,
+                "redis": redis_healthy,
+            },
+            "timestamp": time.time()
         }
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return {
-            "status": "unhealthy", 
-            "error": str(e)
-        }
+        logger.error(f"Health check failed: {str(e)}")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "error": str(e)}
+        )
 
+# Metrics endpoint
+@app.get("/metrics")
+async def metrics():
+    """Prometheus metrics endpoint"""
+    return generate_latest(REGISTRY)
 
-@app.get("/healthz", tags=["health"])
-async def health_check_docker():
-    """Health check endpoint for Docker."""
-    return JSONResponse(content={"status": "ok"}, status_code=200)
+# Root endpoint
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "name": settings.PROJECT_NAME,
+        "version": settings.VERSION,
+        "status": "operational",
+        "docs": "/api/docs" if not settings.PRODUCTION else None
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "src.main_new:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=not settings.PRODUCTION,
+        log_config=None  # Use our custom logging
+    )

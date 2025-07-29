@@ -20,7 +20,7 @@ try:
 except ImportError:
     REDIS_AVAILABLE = False
 
-from src.config.settings import settings
+from src.core.config import settings
 from src.utils.logging import logger
 
 

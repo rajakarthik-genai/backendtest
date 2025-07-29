@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import json
 from openai import AsyncOpenAI
-from src.config.settings import settings
+from src.core.config import settings
 from src.utils.logging import logger
 
 client = AsyncOpenAI(api_key=settings.openai_api_key)

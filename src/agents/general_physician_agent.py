@@ -8,7 +8,7 @@ primary care medical consultation, triage, and general health guidance.
 import json
 from typing import Optional
 from src.agents.base_specialist import BaseSpecialist, SpecialtyType
-from src.config.settings import settings
+from src.core.config import settings
 from src.utils.logging import logger
 
 
@@ -88,15 +88,14 @@ When consulting, always:
 Remember: You are providing medical consultation to assist healthcare decision-making. Always recommend patients consult with their healthcare provider for definitive diagnosis and treatment."""
 
 
-# Create default instance
+# Factory function for creating general physician instances
+def get_general_physician_agent(custom_prompt: Optional[str] = None) -> GeneralPhysicianAgent:
+    """Get a general physician agent instance."""
+    return GeneralPhysicianAgent(custom_prompt)
+
+# Default instance for backward compatibility
 general_physician_agent = GeneralPhysicianAgent()
 
-
 async def get_general_physician() -> GeneralPhysicianAgent:
-    """
-    Get the general physician agent instance.
-    
-    Returns:
-        GeneralPhysicianAgent: The configured general physician agent
-    """
+    """Get the general physician agent instance."""
     return general_physician_agent

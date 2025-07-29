@@ -1,7 +1,7 @@
 import os
 from typing import List
 from openai import AsyncOpenAI
-from src.config.settings import settings
+from src.core.config import settings
 
 async def llm_get_body_parts_for_region(region: str, body_part_list: List[str]) -> List[str]:
     """

@@ -7,8 +7,10 @@ import json
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
+import agentops
 from crewai import Crew, Process
 from src.utils.logging import logger
+from src.core.config import settings
 
 from .document_reader_agent import DocumentReaderAgent
 from .clinical_extractor_agent import ClinicalExtractorAgent
@@ -28,6 +30,11 @@ class MedicalDocumentCrew:
     """
     
     def __init__(self):
+        # Initialize AgentOps for monitoring
+        if hasattr(settings, 'AGENTOPS_API_KEY') and settings.AGENTOPS_API_KEY:
+            agentops.init(api_key=settings.AGENTOPS_API_KEY)
+            logger.info("AgentOps monitoring initialized")
+        
         # Initialize all agents
         self.document_reader = DocumentReaderAgent()
         self.clinical_extractor = ClinicalExtractorAgent()
@@ -112,8 +119,8 @@ class MedicalDocumentCrew:
                 
                 clinical_data = clinical_extraction_result["clinical_data"]
                 
-                # Override patient_id with the provided user_id for proper isolation
-                clinical_data["patient_id"] = user_id
+                # Override patient_id with the provided patient_id for proper isolation
+                clinical_data["patient_id"] = patient_id
                 clinical_data["metadata"]["original_file"] = file_path
                 clinical_data["metadata"]["processing_document_id"] = document_id
                 
@@ -147,7 +154,7 @@ class MedicalDocumentCrew:
             logger.info("Stage 4: Data storage coordination")
             try:
                 storage_result = self.storage_coordinator.coordinate_storage(
-                    clinical_data, document_id, user_id
+                    clinical_data, document_id, patient_id
                 )
                 results["stages"]["storage_coordination"] = storage_result
                 

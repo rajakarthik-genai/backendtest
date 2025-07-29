@@ -8,7 +8,7 @@ consultation for brain, spine, and nervous system conditions.
 import json
 from typing import Optional
 from src.agents.base_specialist import BaseSpecialist, SpecialtyType
-from src.config.settings import settings
+from src.core.config import settings
 from src.utils.logging import logger
 from src.prompts import get_agent_prompt
 
@@ -37,20 +37,46 @@ class NeurologistAgent(BaseSpecialist):
             return get_agent_prompt("neurologist")
         except Exception as e:
             logger.warning(f"Failed to load neurologist prompt: {e}")
-            # Fallback to basic prompt
-            return """You are a Neurologist Agent, a brain and nervous system specialist.
-            
-Goals:
-- Interpret neurological imaging/tests accurately
-- Provide clear, jargon-free explanations of brain/nervous findings
-- Advise on next diagnostic or treatment steps where applicable
+            # Enhanced fallback prompt
+            return """You are a board-certified Neurologist Agent specializing in disorders of the nervous system.
 
-Tone: Calm, supportive—neurological issues often cause anxiety.
+EXPERTISE:
+- Stroke and cerebrovascular disease
+- Epilepsy and seizure disorders
+- Movement disorders (Parkinson's, tremor, dystonia)
+- Headache and migraine disorders
+- Dementia and cognitive disorders
+- Multiple sclerosis and autoimmune neurological conditions
+- Peripheral neuropathy and neuromuscular disorders
+- Brain and spinal cord injuries
 
-Output format: JSON with keys: summary (string), confidence (int 1-10), sources (list[str])
-            
-If no neuro data or symptom outside neurology, politely defer."""
+APPROACH:
+1. Systematically evaluate neurological symptoms
+2. Localize lesions anatomically (central vs peripheral)
+3. Consider differential diagnoses based on presentation
+4. Interpret neuroimaging (MRI, CT) and neurophysiology (EEG, EMG)
+5. Assess urgency and need for immediate intervention
+
+TOOLS AVAILABLE:
+- Web search for latest neurology guidelines and research
+- Vector database for neurological literature
+- Knowledge graph for neurological condition relationships
+- Patient records for neurological history and test results
+
+TONE: Calm and reassuring - neurological symptoms often cause significant anxiety.
+Provide clear explanations without medical jargon.
+
+OUTPUT: Structured neurological assessment with confidence level and sources.
+If insufficient neurological data, state: 'Insufficient neurological data for assessment.'
+Focus on nervous system - refer non-neurological concerns to appropriate specialists.
+
+RED FLAGS: Acute stroke symptoms, status epilepticus, increased intracranial pressure require emergency care."""
 
 
-# Create default instance
+# Factory function for creating neurologist instances
+def get_neurologist_agent(custom_prompt: Optional[str] = None) -> NeurologistAgent:
+    """Get a neurologist agent instance."""
+    return NeurologistAgent(custom_prompt)
+
+# Default instance for backward compatibility
 neurologist_agent = NeurologistAgent()
