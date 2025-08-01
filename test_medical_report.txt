@@ -1,0 +1,92 @@
+PATIENT MEDICAL REPORT
+
+Patient Information:
+Name: John Smith
+Date of Birth: 1975-05-15
+Patient ID: PT_1C774437F95C5A44
+Date of Visit: July 30, 2025
+
+CHIEF COMPLAINT:
+Patient presents with chest pain radiating to left arm, shortness of breath, and fatigue for the past 3 days.
+
+HISTORY OF PRESENT ILLNESS:
+The patient is a 50-year-old male who reports the onset of chest pain three days ago. The pain is described as crushing and substernal, radiating to the left arm and jaw. Associated symptoms include shortness of breath on exertion, diaphoresis, and general fatigue. Pain is worse with physical activity and improves with rest.
+
+PAST MEDICAL HISTORY:
+- Hypertension (diagnosed 2020)
+- Type 2 Diabetes Mellitus (diagnosed 2018)
+- Hyperlipidemia
+- Family history of coronary artery disease (father had MI at age 55)
+
+MEDICATIONS:
+- Metformin 1000mg twice daily
+- Lisinopril 10mg daily
+- Atorvastatin 40mg daily
+
+PHYSICAL EXAMINATION:
+Vital Signs:
+- Blood Pressure: 165/95 mmHg
+- Heart Rate: 88 bpm
+- Respiratory Rate: 18/min
+- Temperature: 98.6°F
+- O2 Saturation: 96% on room air
+
+Cardiovascular: 
+- Regular rate and rhythm
+- S4 gallop present
+- No murmurs or rubs
+
+Respiratory:
+- Bilateral crackles at lung bases
+- No wheezing
+
+LABORATORY RESULTS:
+- Troponin I: 0.8 ng/mL (elevated)
+- CK-MB: 25 U/L (elevated)
+- BNP: 450 pg/mL (elevated)
+- HbA1c: 8.2% (poor glycemic control)
+- LDL: 165 mg/dL (elevated)
+- Creatinine: 1.4 mg/dL (mild elevation)
+
+IMAGING:
+- ECG: ST-segment depression in leads V4-V6, consistent with myocardial ischemia
+- Chest X-ray: Mild cardiomegaly, early pulmonary edema
+- Echocardiogram: EF 45%, regional wall motion abnormalities in anterior wall
+
+ASSESSMENT AND PLAN:
+1. ACUTE CORONARY SYNDROME (NSTEMI)
+   - High suspicion for non-ST elevation myocardial infarction
+   - Start dual antiplatelet therapy (ASA + Clopidogrel)
+   - Initiate heparin anticoagulation
+   - Schedule urgent cardiac catheterization
+
+2. ACUTE HEART FAILURE
+   - Evidence of volume overload
+   - Start furosemide 40mg IV
+   - Monitor daily weights and fluid balance
+
+3. HYPERTENSION - UNCONTROLLED
+   - Increase Lisinopril to 20mg daily
+   - Consider adding amlodipine if BP remains elevated
+
+4. DIABETES MELLITUS - POORLY CONTROLLED
+   - Continue Metformin
+   - Consider insulin therapy given acute illness
+   - Endocrinology consultation
+
+5. CHRONIC KIDNEY DISEASE - STAGE 3
+   - Monitor creatinine closely
+   - Avoid nephrotoxic medications
+   - Nephrology follow-up
+
+PROGNOSIS:
+Guarded prognosis given extent of coronary disease and multiple comorbidities. Early intervention with cardiac catheterization and revascularization will be critical for optimal outcomes.
+
+FOLLOW-UP:
+- Cardiology consultation within 24 hours
+- Endocrinology consultation for diabetes management
+- Discharge planning with cardiac rehabilitation referral
+
+Physician: Dr. Sarah Johnson, MD
+Cardiology Department
+Date: July 30, 2025
