@@ -16,8 +16,17 @@ from ...agents.orchestrator_agent import OrchestratorAgent
 from ...agents.expert_router import get_expert_router
 from ...chat.short_term import get_short_term_memory
 from ...chat.long_term import get_long_term_memory
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+
+class ConversationMessageRequest(BaseModel):
+    """Request model for adding a message to a conversation"""
+    conversation_id: str = Field(description="ID of the conversation to add the message to")
+    message: str = Field(description="The message content")
+    role: str = Field(default="user", description="Message role: 'user' or 'assistant'")
+
 
 router = APIRouter(
     prefix="/chat",
@@ -501,7 +510,7 @@ async def unified_chat_message(
     db_clients: dict = Depends(get_db_clients)
 ) -> ChatResponse:
     """
-    Unified AI chat endpoint with optional expert opinion mode.
+    Unified AI chat endpoint with optional expert opinion mode and conversation limits.
     
     When expert_opinion=false: Standard conversational AI with medical context
     When expert_opinion=true: Comprehensive analysis by multiple medical specialists
@@ -509,9 +518,47 @@ async def unified_chat_message(
     try:
         patient_id = current_user.patient_id
         message_id = str(uuid.uuid4())
+        conversation_id = chat_request.conversation_id or "default"
         
         logger.info(f"Chat request from patient {patient_id}: {'expert mode' if chat_request.expert_opinion else 'standard mode'}")
         logger.info(f"Request message: {chat_request.message[:100]}...")
+        
+        # Initialize short-term memory with optimized storage
+        stm = get_short_term_memory()
+        
+        # Check conversation limit before processing
+        limit_check = await stm.check_conversation_limit(patient_id, conversation_id)
+        
+        if limit_check.get("is_full"):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "conversation_limit_reached",
+                    "message": "This conversation has reached its message limit. Please start a new conversation.",
+                    "conversation_id": conversation_id,
+                    "suggest_new_conversation": True
+                }
+            )
+        
+        # Store user message with limit checking
+        success, msg_result = await stm.add_message_optimized(
+            user_id=patient_id,
+            conversation_id=conversation_id,
+            role="human",
+            content=chat_request.message
+        )
+        
+        if not success:
+            if msg_result.get("limit_reached"):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "conversation_limit_reached",
+                        "message": msg_result.get("message"),
+                        "conversation_id": conversation_id,
+                        "suggest_new_conversation": True
+                    }
+                )
         
         # Get medical context from processed documents
         logger.info(f"Fetching medical context for patient {patient_id}")
@@ -521,21 +568,9 @@ async def unified_chat_message(
         # Get conversation context for continuity
         conversation_context = await get_conversation_context(
             patient_id, 
-            chat_request.conversation_id or "default",
+            conversation_id,
             context_window=8
         )
-        
-        # Store user message in short-term memory
-        try:
-            stm = get_short_term_memory()
-            await stm.store_message(
-                patient_id=patient_id,
-                conversation_id=chat_request.conversation_id or "default",
-                user_message=chat_request.message,
-                timestamp=datetime.utcnow()
-            )
-        except Exception as e:
-            logger.warning(f"Failed to store user message: {e}")
         
         # Generate response based on mode
         if chat_request.expert_opinion:
@@ -549,30 +584,24 @@ async def unified_chat_message(
                 conversation_context=conversation_context
             )
             
-            # Store assistant response in memory
-            try:
-                await stm.store_message(
-                    patient_id=patient_id,
-                    conversation_id=chat_request.conversation_id or "default",
-                    assistant_message=comprehensive_response.response,
-                    timestamp=datetime.utcnow(),
-                    metadata={
-                        "mode": "expert_opinion",
-                        "specialists_consulted": comprehensive_response.specialists_consulted,
-                        "confidence_score": comprehensive_response.confidence_score
-                    }
-                )
-            except Exception as e:
-                logger.warning(f"Failed to store expert response: {e}")
+            # Store assistant response in memory with limit checking
+            success, response_result = await stm.add_message_optimized(
+                user_id=patient_id,
+                conversation_id=conversation_id,
+                role="assistant",
+                content=comprehensive_response.response
+            )
             
-            # Return structured expert response
+            # Return structured expert response with conversation limit info
             return ChatResponse(
                 message=comprehensive_response.response,
                 context_used=len(medical_context) > 0,
                 expert_mode=True,
                 comprehensive_analysis=comprehensive_response,
                 timestamp=datetime.utcnow(),
-                conversation_id=chat_request.conversation_id or "default"
+                conversation_id=conversation_id,
+                remaining_messages=response_result.get("remaining_messages"),
+                conversation_warning=response_result.get("warning")
             )
             
         else:
@@ -585,28 +614,23 @@ async def unified_chat_message(
                 conversation_context=conversation_context
             )
             
-            # Store assistant response in memory
-            try:
-                await stm.store_message(
-                    patient_id=patient_id,
-                    conversation_id=chat_request.conversation_id or "default",
-                    assistant_message=standard_response,
-                    timestamp=datetime.utcnow(),
-                    metadata={
-                        "mode": "standard",
-                        "context_items": len(medical_context)
-                    }
-                )
-            except Exception as e:
-                logger.warning(f"Failed to store standard response: {e}")
+            # Store assistant response in memory with limit checking
+            success, response_result = await stm.add_message_optimized(
+                user_id=patient_id,
+                conversation_id=conversation_id,
+                role="assistant",
+                content=standard_response
+            )
             
-            # Return standard chat response
+            # Return standard chat response with conversation limit info
             return ChatResponse(
                 message=standard_response,
                 context_used=len(medical_context) > 0,
                 expert_mode=False,
                 timestamp=datetime.utcnow(),
-                conversation_id=chat_request.conversation_id or "default"
+                conversation_id=conversation_id,
+                remaining_messages=response_result.get("remaining_messages"),
+                conversation_warning=response_result.get("warning")
             )
     
     except Exception as e:
@@ -630,11 +654,11 @@ async def get_conversation_history(
         patient_id = current_user.patient_id
         stm = get_short_term_memory()
         
-        messages = await stm.get_recent_messages(patient_id, limit=limit)
-        
-        # Filter by conversation_id if provided
-        if conversation_id != "all":
-            messages = [msg for msg in messages if msg.get("conversation_id") == conversation_id]
+        messages = await stm.get_recent_messages(
+            patient_id, 
+            limit=limit, 
+            conversation_id=conversation_id
+        )
         
         return {
             "conversation_id": conversation_id,
@@ -648,6 +672,172 @@ async def get_conversation_history(
             status_code=500,
             detail="Failed to retrieve conversation history"
         )
+
+
+@router.get("/conversations/new")
+@limiter.limit("50/hour")
+async def create_new_conversation(
+    request: Request,
+    current_user = Depends(get_current_user)
+):
+    """Create a new conversation with empty message array and return conversation_id"""
+    try:
+        patient_id = current_user.patient_id
+        stm = get_short_term_memory()
+        
+        result = await stm.create_new_conversation(patient_id)
+        
+        if result.get("success"):
+            return {
+                "success": True,
+                "data": {
+                    "conversation_id": result["conversation_id"],
+                    "remaining_messages": result["remaining_messages"]
+                }
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to create conversation")
+            
+    except Exception as e:
+        logger.error(f"Create conversation error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/conversations/new")
+@limiter.limit("100/hour")
+async def add_message_to_conversation(
+    request: Request,
+    message_data: ConversationMessageRequest,
+    current_user = Depends(get_current_user)
+):
+    """Add a chat message to an existing conversation"""
+    try:
+        patient_id = current_user.patient_id
+        stm = get_short_term_memory()
+        
+        # Add the user message
+        success, result = await stm.add_message_optimized(
+            user_id=patient_id,
+            conversation_id=message_data.conversation_id,
+            role=message_data.role,
+            content=message_data.message
+        )
+        
+        if not success:
+            if result.get("limit_reached"):
+                raise HTTPException(status_code=400, detail=result.get("message", "Conversation limit reached"))
+            else:
+                raise HTTPException(status_code=500, detail="Failed to add message")
+        
+        return {
+            "success": True,
+            "data": {
+                "conversation_id": message_data.conversation_id,
+                "remaining_messages": result.get("remaining_messages", 0),
+                "warning": result.get("warning"),
+                "message_count": result.get("message_count", 0)
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Add message error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/conversations")
+@limiter.limit("100/hour")
+async def list_conversations(
+    request: Request,
+    skip: int = 0,
+    limit: int = 20,
+    current_user = Depends(get_current_user)
+):
+    """List user conversations with pagination"""
+    try:
+        patient_id = current_user.patient_id
+        stm = get_short_term_memory()
+        
+        conversations = await stm.get_all_conversations(patient_id, skip, limit)
+        
+        return {
+            "success": True,
+            "data": {
+                "conversations": conversations,
+                "skip": skip,
+                "limit": limit,
+                "count": len(conversations)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"List conversations error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/conversations/{conversation_id}/status")
+@limiter.limit("200/hour")
+async def get_conversation_status(
+    request: Request,
+    conversation_id: str,
+    current_user = Depends(get_current_user)
+):
+    """Get conversation limit status"""
+    try:
+        patient_id = current_user.patient_id
+        stm = get_short_term_memory()
+        
+        status = await stm.check_conversation_limit(patient_id, conversation_id)
+        
+        if status.get("error"):
+            raise HTTPException(status_code=404, detail=status["error"])
+        
+        from src.chat.short_term import MAX_MESSAGES_PER_CONVERSATION
+        
+        return {
+            "success": True,
+            "data": {
+                "conversation_id": conversation_id,
+                "message_count": status["message_count"],
+                "remaining_messages": status["remaining_messages"],
+                "is_full": status["is_full"],
+                "max_messages": MAX_MESSAGES_PER_CONVERSATION,
+                "warning": status.get("warning", False)
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get conversation status error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.delete("/conversations/{conversation_id}")
+@limiter.limit("20/hour")
+async def delete_conversation(
+    request: Request,
+    conversation_id: str,
+    current_user = Depends(get_current_user)
+):
+    """Delete a conversation"""
+    try:
+        patient_id = current_user.patient_id
+        stm = get_short_term_memory()
+        
+        success = await stm.delete_conversation(patient_id, conversation_id)
+        
+        if success:
+            return {"success": True, "message": "Conversation deleted successfully"}
+        else:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Delete conversation error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/conversation/{conversation_id}")

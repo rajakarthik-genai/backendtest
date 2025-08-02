@@ -62,6 +62,9 @@ class ChatResponse(BaseModel):
     context_used: bool = Field(default=False, description="Whether medical context was used")
     sources: List[str] = Field(default_factory=list, description="Sources of information used")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+    # Conversation limit tracking
+    remaining_messages: Optional[int] = Field(default=None, description="Remaining messages in current conversation")
+    conversation_warning: Optional[str] = Field(default=None, description="Warning message about conversation limits")
 
 
 class ExpertOpinionRequest(BaseModel):
